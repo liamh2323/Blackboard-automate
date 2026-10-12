@@ -71,10 +71,15 @@ def fetch_course_tree(page, course_id: str, parent_id: str = "ROOT", path: str =
 
     for item in items:
         title = item.get("title", "")
+        if isinstance(title, dict):
+            title = title.get("rawText") or title.get("text") or str(title)
+        title = str(title) if title is not None else ""
         item_id = item.get("id")
         handler = item.get("contentHandler", "")
         current_path = f"{path} > {title}" if path else title
         cd = item.get("contentDetail", {})
+        if not isinstance(cd, dict):
+            cd = {}
 
         if "resource/x-bb-file" in cd:
             finfo = cd["resource/x-bb-file"].get("file", {})
@@ -113,10 +118,22 @@ def fetch_course_announcements(page, course_id: str) -> List[Dict[str, Any]]:
     announcements = []
 
     for a in raw_items:
-        aid = a.get("id") or str(hash(a.get("title", "") + a.get("created", "")))
         title = a.get("title", "Announcement")
-        created = a.get("created")
-        body_html = a.get("body", "")
+        if isinstance(title, dict):
+            title = title.get("rawText") or title.get("text") or str(title)
+        title = str(title) if title is not None else "Announcement"
+
+        created = a.get("created") or a.get("createdDate")
+        aid = a.get("id") or str(hash(f"{title}_{created}"))
+
+        raw_body = a.get("body", "")
+        if isinstance(raw_body, dict):
+            body_html = raw_body.get("rawText") or raw_body.get("text") or raw_body.get("formattedText") or ""
+        elif isinstance(raw_body, str):
+            body_html = raw_body
+        else:
+            body_html = str(raw_body) if raw_body is not None else ""
+
         body_md = html_to_markdown(body_html)
 
         db.upsert_announcement(aid, course_id, title, created, body_html, body_md)

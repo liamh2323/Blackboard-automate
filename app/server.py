@@ -159,6 +159,11 @@ async def stream_logs():
 
 @app.post("/api/auth/login")
 def launch_login(background_tasks: BackgroundTasks):
+    if auth.is_login_active():
+        return {"status": "busy", "message": "Login window is already open"}
+    if scheduler.is_sync_active():
+        return {"status": "busy", "message": "Cannot open browser login while synchronization is in progress"}
+
     def run_login():
         auth.launch_interactive_login(logger=broadcast_log)
 

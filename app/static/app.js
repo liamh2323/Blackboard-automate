@@ -322,6 +322,8 @@ async function triggerSync() {
 }
 
 async function triggerLogin() {
+  const btn = document.getElementById('btn-login');
+  btn.disabled = true;
   appendConsoleLog('[System] Launching Chromium login window for Microsoft SSO/2FA...');
   document.querySelector('[data-tab="tab-logs"]').click();
   try {
@@ -330,6 +332,10 @@ async function triggerLogin() {
     appendConsoleLog(`[System] ${data.message}. Complete login in the opened browser window.`);
   } catch (err) {
     appendConsoleLog(`[Error] Failed to launch browser: ${err}`);
+  } finally {
+    setTimeout(() => {
+      btn.disabled = false;
+    }, 4000);
   }
 }
 

@@ -71,6 +71,15 @@ class TestBlackboardAutomate(unittest.TestCase):
         self.assertIn("submit your lab report", md)
         self.assertIn("Task A: Setup", md)
 
+        # Test Ultra dictionary payload format
+        dict_payload = {"rawText": "<p>Ultra Announcement <strong>content</strong></p>"}
+        md_dict = html_to_markdown(dict_payload)
+        self.assertIn("Ultra Announcement **content**", md_dict)
+
+        # Test empty / None handling
+        self.assertEqual(html_to_markdown(None), "")
+        self.assertEqual(html_to_markdown({}), "")
+
     def test_04_announcement_task_extraction(self):
         announcement = {
             "id": "ann_99",

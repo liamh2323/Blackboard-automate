@@ -34,45 +34,73 @@ def check_login_status() -> Tuple[bool, str]:
     except Exception as e:
         return False, f"Auth check failed: {e}"
 
+import threading
+
+_login_lock = threading.Lock()
+
+def is_login_active() -> bool:
+    return _login_lock.locked()
+
 def launch_interactive_login(timeout_seconds: int = 300, logger=print) -> bool:
     """
     Opens an interactive Chromium window for the user to enter university SSO credentials
     and complete 2FA on their phone.
     """
-    logger(f"Launching interactive browser login window for {BASE_URL}...")
-    logger("Please log in using your university credentials and complete 2-Factor Authentication.")
+    if not _login_lock.acquire(blocking=False):
+        logger("⚠️ Login window is already open or in progress.")
+        return False
 
-    with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            user_data_dir=PROFILE_PATH,
-            headless=False,
-            viewport={"width": 1280, "height": 850},
-            args=["--disable-blink-features=AutomationControlled"]
-        )
+    try:
+        logger(f"Launching interactive browser login window for {BASE_URL}...")
+        logger("Please log in using your university credentials and complete 2-Factor Authentication.")
 
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        page.goto(f"{BASE_URL}/ultra/course")
+        with sync_playwright() as p:
+            try:
+                ctx = p.chromium.launch_persistent_context(
+                    user_data_dir=PROFILE_PATH,
+                    headless=False,
+                    viewport={"width": 1280, "height": 850},
+                    args=["--disable-blink-features=AutomationControlled"]
+                )
+            except Exception as e:
+                logger(f"❌ Could not launch browser profile (it may already be in use): {e}")
+                return False
 
-        logged_in = False
-        start_time = time.time()
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                page.goto(f"{BASE_URL}/ultra/course")
+            except Exception:
+                pass
 
-        while time.time() - start_time < timeout_seconds:
-            curr_url = page.url
-            if ("ultra/course" in curr_url or "webapps" in curr_url) and "login" not in curr_url:
+            logged_in = False
+            start_time = time.time()
+
+            while time.time() - start_time < timeout_seconds:
                 try:
-                    page.wait_for_load_state("networkidle", timeout=2000)
+                    curr_url = page.url
+                    if ("ultra/course" in curr_url or "webapps" in curr_url) and "login" not in curr_url:
+                        try:
+                            page.wait_for_load_state("networkidle", timeout=2000)
+                        except Exception:
+                            pass
+                        if is_session_valid(page):
+                            logged_in = True
+                            break
                 except Exception:
-                    pass
-                if is_session_valid(page):
-                    logged_in = True
+                    # Page may have been closed by user
                     break
-            time.sleep(1)
+                time.sleep(1)
 
-        ctx.close()
+            try:
+                ctx.close()
+            except Exception:
+                pass
 
-        if logged_in:
-            logger("✅ Authentication successful! Session profile saved.")
-            return True
-        else:
-            logger("❌ Authentication timed out or was not completed.")
-            return False
+            if logged_in:
+                logger("✅ Authentication successful! Session profile saved.")
+                return True
+            else:
+                logger("❌ Authentication timed out or was not completed.")
+                return False
+    finally:
+        _login_lock.release()

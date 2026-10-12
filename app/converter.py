@@ -20,8 +20,15 @@ try:
 except Exception as e:
     _md_converter = None
 
-def html_to_markdown(html_content: str) -> str:
+def html_to_markdown(html_content: Any) -> str:
     """Converts raw HTML (such as announcements or description fields) to clean Markdown."""
+    if not html_content:
+        return ""
+    if isinstance(html_content, dict):
+        html_content = html_content.get("rawText") or html_content.get("text") or html_content.get("formattedText") or ""
+    elif not isinstance(html_content, str):
+        html_content = str(html_content)
+
     if not html_content or not html_content.strip():
         return ""
     try:

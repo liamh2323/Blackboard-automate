@@ -80,6 +80,11 @@ def init_db():
             log_summary TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_files_course ON files (course_id);
         CREATE INDEX IF NOT EXISTS idx_announcements_course ON announcements (course_id);
         CREATE INDEX IF NOT EXISTS idx_tasks_course ON tasks (course_id);
@@ -227,7 +232,40 @@ def delete_task(tid: str):
         cursor = conn.cursor()
         cursor.execute("DELETE FROM tasks WHERE id=?", (tid,))
 
-def get_tasks(completed: Optional[bool] = None, cid: Optional[str] = None) -> List[Dict[str, Any]]:
+def update_task(tid: str, title: Optional[str] = None, description: Optional[str] = None,
+                due_date: Optional[str] = None, priority: Optional[str] = None,
+                course_id: Optional[str] = None):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        fields = []
+        params = []
+        if title is not None:
+            fields.append("title=?")
+            params.append(title)
+        if description is not None:
+            fields.append("description=?")
+            params.append(description)
+        if due_date is not None:
+            fields.append("due_date=?")
+            params.append(due_date)
+        if priority is not None:
+            fields.append("priority=?")
+            params.append(priority)
+        if course_id is not None:
+            fields.append("course_id=?")
+            params.append(course_id)
+        if fields:
+            params.append(tid)
+            cursor.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=?", params)
+
+def cleanup_legacy_announcement_tasks():
+    """Removes fragmented legacy announcement tasks (e.g. ann_task_*_0, ann_task_*_1)."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM tasks WHERE id GLOB 'ann_task_*_*'")
+
+def get_tasks(completed: Optional[bool] = None, cid: Optional[str] = None,
+              source_type: Optional[str] = None, priority: Optional[str] = None) -> List[Dict[str, Any]]:
     with get_connection() as conn:
         cursor = conn.cursor()
         query = """
@@ -243,9 +281,41 @@ def get_tasks(completed: Optional[bool] = None, cid: Optional[str] = None) -> Li
         if cid:
             query += " AND t.course_id = ?"
             params.append(cid)
-        query += " ORDER BY CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END, t.due_date ASC, t.created_at DESC"
+        if source_type:
+            query += " AND t.source_type = ?"
+            params.append(source_type)
+        if priority:
+            query += " AND t.priority = ?"
+            params.append(priority)
+
+        # Order by:
+        # 1. Official assignment deadlines first, then priority (high -> medium -> low), then due date
+        query += """ ORDER BY
+            CASE WHEN t.source_type = 'assignment' THEN 0 ELSE 1 END,
+            CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+            CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END,
+            t.due_date ASC,
+            t.created_at DESC
+        """
         cursor.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
+
+# --- App Settings Helpers ---
+
+def get_setting(key: str, default: Any = None) -> Any:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM app_settings WHERE key=?", (key,))
+        row = cursor.fetchone()
+        return row[0] if row else default
+
+def set_setting(key: str, value: Any):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO app_settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """, (key, str(value)))
 
 # --- Sync Run Helpers ---
 

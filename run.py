@@ -21,6 +21,8 @@ def main():
     parser.add_argument("--sync-only", action="store_true", help="Run sync directly without starting web dashboard")
     parser.add_argument("--login", action="store_true", help="Launch interactive 2FA browser login")
     parser.add_argument("--convert-all", action="store_true", help="Convert all existing unconverted PDFs to Markdown")
+    parser.add_argument("--coverage", "-c", action="store_true", help="Analyze downloaded markdown notes and print study coverage")
+    parser.add_argument("--course", default=None, help="Filter study coverage to a specific course code or name")
     parser.add_argument("--no-browser", action="store_true", help="Do not auto-open browser on dashboard startup")
 
     args = parser.parse_args()
@@ -42,6 +44,12 @@ def main():
         from app.converter import convert_all_pending_files
         count = convert_all_pending_files()
         print(f"✅ Converted {count} pending PDF(s) to Markdown.")
+        sys.exit(0)
+
+    # Mode 4: Study Coverage & Syllabus Analyzer
+    if args.coverage:
+        from app.coverage import print_cli_coverage
+        print_cli_coverage(args.course)
         sys.exit(0)
 
     # Mode 4: Web Dashboard Server (Default)

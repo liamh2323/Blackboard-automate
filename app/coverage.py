@@ -1,0 +1,310 @@
+import os
+import re
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
+
+from .config import DOWNLOAD_DIR
+from . import database as db
+
+OBJECTIVE_HEADERS = [
+    r"learning\s+outcomes?",
+    r"learning\s+objectives?",
+    r"goals?",
+    r"in\s+this\s+lecture",
+    r"overview",
+    r"topics?\s+covered",
+    r"what\s+you\s+will\s+learn",
+    r"summary"
+]
+
+LAB_DELIVERABLE_PATTERNS = [
+    r"exercise\s*\d+",
+    r"task\s*\d+",
+    r"deliverable",
+    r"submission\s+requirement",
+    r"to\s+be\s+completed",
+    r"checklist"
+]
+
+def parse_markdown_note(md_path: Path) -> Dict[str, Any]:
+    """
+    Parses a single lecture or lab markdown note to extract title, topics,
+    learning objectives, key concepts, and actionable checklist items.
+    """
+    try:
+        with open(md_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+    except Exception:
+        return {}
+
+    lines = content.splitlines()
+    title = md_path.stem.replace("_", " ").title()
+    headings = []
+    bullet_items = []
+    bold_terms = []
+    objectives = []
+    deliverables = []
+
+    in_objectives_section = False
+    in_deliverables_section = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        # Check for title
+        if stripped.startswith("# ") and not headings:
+            title = stripped.lstrip("#").strip()
+
+        # Check for subheadings (Level 2 & Level 3)
+        if stripped.startswith("## ") or stripped.startswith("### "):
+            header_text = re.sub(r"^#+\s*", "", stripped).strip()
+            # Ignore purely page marker headers e.g. "Page 1"
+            if not re.match(r"^Page\s+\d+", header_text, re.IGNORECASE):
+                headings.append(header_text)
+
+            # Check if this heading indicates objectives or deliverables
+            in_objectives_section = any(re.search(pat, header_text, re.IGNORECASE) for pat in OBJECTIVE_HEADERS)
+            in_deliverables_section = any(re.search(pat, header_text, re.IGNORECASE) for pat in LAB_DELIVERABLE_PATTERNS)
+            continue
+
+        # Detect bullet items
+        if stripped.startswith(("- ", "* ", "1. ", "2. ", "3. ")):
+            clean_item = re.sub(r"^[-*]|\d+\.\s*", "", stripped).strip()
+            clean_item = re.sub(r"<!--.*?-->", "", clean_item).strip()
+            if len(clean_item) > 8:
+                bullet_items.append(clean_item)
+                if in_objectives_section and len(objectives) < 8:
+                    objectives.append(clean_item)
+                if in_deliverables_section and len(deliverables) < 8:
+                    deliverables.append(clean_item)
+
+        # Extract bolded concepts: **Concept**
+        matches = re.findall(r"\*\*([a-zA-Z0-9\s_\-]{3,40})\*\*", stripped)
+        for m in matches:
+            m_clean = m.strip()
+            if m_clean and len(m_clean) > 2 and m_clean.lower() not in ["note", "important", "warning", "example"]:
+                if m_clean not in bold_terms:
+                    bold_terms.append(m_clean)
+
+    # Word count and estimated read time
+    words = len(content.split())
+    read_minutes = max(1, round(words / 180))
+
+    # Determine category based on parent folder or filename
+    parent_name = md_path.parent.name.lower()
+    if "lab" in parent_name or "lab" in md_path.stem.lower():
+        category = "Lab"
+    elif "tutorial" in parent_name or "tutorial" in md_path.stem.lower():
+        category = "Tutorial"
+    elif "assignment" in parent_name:
+        category = "Assignment"
+    elif "exam" in parent_name:
+        category = "Exam"
+    else:
+        category = "Lecture"
+
+    return {
+        "filename": md_path.name,
+        "path": str(md_path),
+        "title": title,
+        "category": category,
+        "word_count": words,
+        "estimated_minutes": read_minutes,
+        "topics": headings[:12],
+        "key_concepts": bold_terms[:15],
+        "learning_objectives": objectives[:6],
+        "deliverables": deliverables[:6]
+    }
+
+def scan_course_notes(course_folder: Path) -> List[Dict[str, Any]]:
+    """Recursively scans all .md notes in a course directory."""
+    if not course_folder.exists():
+        return []
+
+    notes = []
+    for root, _, files in os.walk(course_folder):
+        for f in sorted(files):
+            if f.endswith(".md") and not f.startswith(".") and f not in ["STUDY_PLAN.md", "README.md", "SYLLABUS.md"]:
+                full_path = Path(root) / f
+                parsed = parse_markdown_note(full_path)
+                if parsed:
+                    notes.append(parsed)
+    return notes
+
+def generate_course_study_plan(course_name: str, course_code: str, notes: List[Dict[str, Any]]) -> str:
+    """Generates a structured STUDY_PLAN.md document for a course."""
+    lines = [
+        f"# 📚 Study Coverage & Syllabus: {course_name} ({course_code})",
+        f"\n*Auto-generated by Blackboard Automate on {datetime.now().strftime('%Y-%m-%d %H:%M')}*",
+        "\n---",
+        "\n## 🎯 Executive Overview",
+        f"- **Total Documents Indexed**: {len(notes)}",
+        f"- **Estimated Total Review Time**: {sum(n['estimated_minutes'] for n in notes)} minutes",
+        "\n---",
+        "\n## 📋 Complete Topic Checklist",
+    ]
+
+    lectures = [n for n in notes if n["category"] == "Lecture"]
+    labs = [n for n in notes if n["category"] == "Lab"]
+    others = [n for n in notes if n["category"] not in ["Lecture", "Lab"]]
+
+    if lectures:
+        lines.append("\n### 🎓 Lectures & Core Theory")
+        for idx, lec in enumerate(lectures, 1):
+            lines.append(f"\n#### {idx}. {lec['title']} (`{lec['filename']}` ~ {lec['estimated_minutes']}m)")
+            if lec["topics"]:
+                lines.append("**Key Topics:**")
+                for top in lec["topics"][:6]:
+                    lines.append(f"- [ ] {top}")
+            if lec["key_concepts"]:
+                lines.append(f"**Core Concepts:** {', '.join(lec['key_concepts'][:8])}")
+
+    if labs:
+        lines.append("\n### 💻 Labs & Hands-on Deliverables")
+        for idx, lab in enumerate(labs, 1):
+            lines.append(f"\n#### Lab {idx}: {lab['title']} (`{lab['filename']}`)")
+            if lab["deliverables"]:
+                lines.append("**Tasks & Requirements:**")
+                for d in lab["deliverables"]:
+                    lines.append(f"- [ ] {d}")
+            elif lab["topics"]:
+                for top in lab["topics"][:4]:
+                    lines.append(f"- [ ] {top}")
+
+    if others:
+        lines.append("\n### 📖 Tutorials & Supplementary Materials")
+        for item in others:
+            lines.append(f"- [ ] **{item['title']}** (`{item['filename']}`)")
+
+    lines.append("\n---")
+    lines.append("\n## 🤖 Antigravity CLI Study Prompts")
+    lines.append("Use these prompts with the `agy` CLI to study this course:")
+    lines.append("```bash")
+    rel_path = f"./downloads/{course_name}"
+    lines.append(f'# Comprehensive topic review')
+    lines.append(f'agy "I am studying {course_name}. Read the notes in {rel_path} and quiz me with 5 challenging concept questions."')
+    lines.append(f'\n# Exam prep & summary')
+    lines.append(f'agy "Synthesize the main exam topics and formulas from the lecture notes in {rel_path}/lectures/."')
+    lines.append("```")
+
+    return "\n".join(lines)
+
+def build_study_coverage_report(course_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Builds the complete study coverage report across one or all courses.
+    Also writes STUDY_PLAN.md into each course folder.
+    """
+    courses = db.get_courses(only_active=True)
+    if course_id:
+        courses = [c for c in courses if c["id"] == course_id]
+
+    report_data = []
+
+    for c in courses:
+        cfolder = Path(c["folder"])
+        notes = scan_course_notes(cfolder)
+        if not notes:
+            # Check fallback directory structure
+            alt_folder = DOWNLOAD_DIR / cfolder.name
+            if alt_folder.exists():
+                cfolder = alt_folder
+                notes = scan_course_notes(cfolder)
+
+        # Generate STUDY_PLAN.md in course folder
+        if notes and cfolder.exists():
+            plan_text = generate_course_study_plan(c["name"], c.get("code", ""), notes)
+            try:
+                with open(cfolder / "STUDY_PLAN.md", "w", encoding="utf-8") as f:
+                    f.write(plan_text)
+            except Exception:
+                pass
+
+        all_concepts = []
+        for n in notes:
+            all_concepts.extend(n.get("key_concepts", []))
+
+        # Deduplicate concepts preserving order
+        seen = set()
+        deduped_concepts = []
+        for item in all_concepts:
+            low = item.lower()
+            if low not in seen:
+                seen.add(low)
+                deduped_concepts.append(item)
+
+        total_est = sum(n["estimated_minutes"] for n in notes)
+
+        antigravity_prompt = (
+            f"Review the markdown lecture and lab notes for '{c['name']}' in {cfolder}. "
+            f"There are {len(notes)} indexed files. "
+            f"Provide a structured study roadmap, explain the top concepts ({', '.join(deduped_concepts[:6])}), "
+            f"and generate a 10-question practice test."
+        )
+        antigravity_command = f'agy "{antigravity_prompt}"'
+
+        report_data.append({
+            "course_id": c["id"],
+            "course_name": c["name"],
+            "course_code": c.get("code", ""),
+            "folder": str(cfolder),
+            "total_notes": len(notes),
+            "estimated_review_minutes": total_est,
+            "top_concepts": deduped_concepts[:25],
+            "notes": notes,
+            "antigravity_prompt": antigravity_prompt,
+            "antigravity_command": antigravity_command
+        })
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "total_courses": len(report_data),
+        "courses": report_data
+    }
+
+def print_cli_coverage(course_filter: Optional[str] = None):
+    """Prints a beautiful, rich terminal representation of study coverage."""
+    report = build_study_coverage_report()
+    courses = report.get("courses", [])
+
+    if course_filter:
+        courses = [c for c in courses if course_filter.lower() in c["course_name"].lower() or course_filter.lower() in c["course_code"].lower()]
+
+    print("\n" + "=" * 70)
+    print("📖 BLACKBOARD AUTOMATE - ACADEMIC STUDY COVERAGE & SYLLABUS")
+    print("=" * 70)
+
+    if not courses:
+        print("\n⚠️ No converted markdown notes found yet.")
+        print("Run sync first to download and convert course materials:")
+        print("    ./bb sync")
+        print("=" * 70 + "\n")
+        return
+
+    for c in courses:
+        print(f"\n📚 MODULE: {c['course_name']} ({c['course_code']})")
+        print(f"   📁 Folder: {c['folder']}")
+        print(f"   📄 Notes Converted: {c['total_notes']} files (~{c['estimated_review_minutes']} mins total study time)")
+
+        if c["top_concepts"]:
+            print(f"   🔑 Key Concepts: {', '.join(c['top_concepts'][:12])}")
+
+        print("\n   📋 Topics To Cover:")
+        for note in c["notes"][:15]:
+            icon = "🎓" if note["category"] == "Lecture" else ("💻" if note["category"] == "Lab" else "📖")
+            print(f"      {icon} [{note['category']}] {note['title']} ({note['estimated_minutes']}m)")
+            if note["topics"]:
+                for top in note["topics"][:3]:
+                    print(f"         • {top}")
+
+        if len(c["notes"]) > 15:
+            print(f"      ... and {len(c['notes']) - 15} more notes.")
+
+        print("\n   🤖 Antigravity CLI Study Command:")
+        print(f"      agy \"{c['antigravity_prompt']}\"")
+        print("-" * 70)
+
+    print("\n💡 Tip: A full STUDY_PLAN.md has been placed in each module folder.")
+    print("=" * 70 + "\n")

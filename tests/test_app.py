@@ -129,5 +129,109 @@ class TestBlackboardAutomate(unittest.TestCase):
         self.assertIn("text/calendar", res_cal.headers["content-type"])
         self.assertIn("BEGIN:VCALENDAR", res_cal.text)
 
+    def test_07_study_coverage_analyzer(self):
+        from app import coverage
+
+        # Create temporary markdown note in test downloads
+        course_dir = Path("./test_downloads/Systems")
+        course_dir.mkdir(parents=True, exist_ok=True)
+        lec_file = course_dir / "week1_virtual_memory.md"
+        with open(lec_file, "w", encoding="utf-8") as f:
+            f.write("""# Lecture 1: Virtual Memory and Paging
+
+## Learning Objectives
+- Understand page tables and TLB
+- Learn about page faults and swap space
+
+## Paging Architecture
+**Paging** divides virtual memory into fixed-size blocks called pages.
+The **TLB** caches recent virtual-to-physical translations.
+""")
+
+        parsed = coverage.parse_markdown_note(lec_file)
+        self.assertEqual(parsed["title"], "Lecture 1: Virtual Memory and Paging")
+        self.assertIn("Paging Architecture", parsed["topics"])
+        self.assertIn("Paging", parsed["key_concepts"])
+        self.assertGreaterEqual(len(parsed["learning_objectives"]), 1)
+
+        # Test report builder
+        report = coverage.build_study_coverage_report("test_c1")
+        self.assertGreaterEqual(len(report["courses"]), 1)
+        c_report = report["courses"][0]
+        self.assertEqual(c_report["course_id"], "test_c1")
+        self.assertIn("agy", c_report["antigravity_command"])
+        self.assertIn("Review", c_report["antigravity_prompt"])
+
+        # Verify STUDY_PLAN.md was created in course dir
+        self.assertTrue((course_dir / "STUDY_PLAN.md").exists())
+
+    def test_08_smart_announcement_task_filtering(self):
+        # 1. Non-actionable announcement should NOT create a task
+        chatty_announcement = {
+            "id": "ann_chatty",
+            "course_id": "test_c1",
+            "title": "Welcome to week 3!",
+            "markdown_body": "Hope you all had a nice weekend. Lecture slides are uploaded. Let me know if you have questions."
+        }
+        extracted_none = extract_tasks_from_announcement_text(chatty_announcement, "Systems Programming I")
+        self.assertEqual(len(extracted_none), 0)
+
+        # 2. Actionable announcement with multiple sentences should only create ONE consolidated task (not 5 spam tasks)
+        actionable_announcement = {
+            "id": "ann_action",
+            "course_id": "test_c1",
+            "title": "Mandatory Assignment Submission Deadline",
+            "markdown_body": "Important notice.\nPlease submit your assignment by Friday 24th October at 5pm.\nPenalties will apply.\nDo not forget to upload to Blackboard."
+        }
+        extracted_one = extract_tasks_from_announcement_text(actionable_announcement, "Systems Programming I")
+        self.assertEqual(len(extracted_one), 1)
+        self.assertEqual(extracted_one[0]["id"], "ann_task_ann_action")
+        self.assertEqual(extracted_one[0]["priority"], "high")
+
+    def test_09_scheduler_status_and_config(self):
+        from app import scheduler
+        client = TestClient(app)
+
+        # GET scheduler info
+        res = client.get("/api/sync/status")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("is_syncing", data)
+        self.assertIn("auto_sync_enabled", data)
+        self.assertIn("interval_hours", data)
+
+        # POST reconfigure scheduler
+        res_cfg = client.post("/api/scheduler/config", json={"enabled": True, "interval_hours": 2.0})
+        self.assertEqual(res_cfg.status_code, 200)
+        self.assertEqual(res_cfg.json()["interval_hours"], 2.0)
+        self.assertEqual(db.get_setting("auto_sync_interval_hours"), "2.0")
+
+    def test_10_task_filtering_and_update(self):
+        # Create different task types
+        db.upsert_task("t_assign", "test_c1", "HW 1", "desc", "2026-10-30", "assignment", "s1", "high")
+        db.upsert_task("t_study", "test_c1", "Review Slides", "desc", None, "study", "s2", "low")
+
+        # Filter by source_type
+        assignments = db.get_tasks(source_type="assignment")
+        self.assertTrue(any(t["id"] == "t_assign" for t in assignments))
+        self.assertFalse(any(t["id"] == "t_study" for t in assignments))
+
+        studies = db.get_tasks(source_type="study")
+        self.assertTrue(any(t["id"] == "t_study" for t in studies))
+
+        # Update task
+        db.update_task("t_study", title="Review Slides Week 1", priority="medium")
+        updated = [t for t in db.get_tasks() if t["id"] == "t_study"][0]
+        self.assertEqual(updated["title"], "Review Slides Week 1")
+        self.assertEqual(updated["priority"], "medium")
+
+    def test_11_coverage_endpoint(self):
+        client = TestClient(app)
+        res = client.get("/api/coverage")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("courses", data)
+        self.assertIn("total_courses", data)
+
 if __name__ == "__main__":
     unittest.main()

@@ -15,9 +15,12 @@
         <div>
           <h1>Blackboard Automate</h1>
         </div>
-        <span class="badge" id="status-badge">Idle</span>
+        <span class="badge" id="status-badge" title="Auto-Sync Status">Auto-Sync: Ready</span>
       </div>
       <div class="header-actions">
+        <button class="btn btn-outline" id="btn-autosync-settings" title="Configure background auto-sync schedule">
+          ⚙️ Auto-Sync
+        </button>
         <button class="btn btn-outline" id="btn-login" title="Open Chromium login window for 2FA">
           🔑 2FA Login
         </button>
@@ -57,6 +60,7 @@
     <!-- Navigation Tabs -->
     <div class="tabs">
       <button class="tab-btn active" data-tab="tab-todo">📋 To-Do & Deadlines</button>
+      <button class="tab-btn" data-tab="tab-coverage">📖 Study Coverage</button>
       <button class="tab-btn" data-tab="tab-courses">📚 Modules & Files</button>
       <button class="tab-btn" data-tab="tab-announcements">📢 Announcements</button>
       <button class="tab-btn" data-tab="tab-logs">⚡ Sync Console</button>
@@ -66,9 +70,18 @@
     <div class="tab-content active" id="tab-todo">
       <div class="todo-controls">
         <div class="filters-row">
+          <span style="font-size: 0.75rem; color: var(--text-muted); align-self: center; margin-right: 0.25rem;">Status:</span>
           <button class="filter-btn active" data-filter="pending">Pending</button>
           <button class="filter-btn" data-filter="all">All</button>
           <button class="filter-btn" data-filter="completed">Completed</button>
+        </div>
+        <div class="filters-row">
+          <span style="font-size: 0.75rem; color: var(--text-muted); align-self: center; margin-right: 0.25rem;">Type:</span>
+          <button class="type-filter-btn active" data-type="">All Types</button>
+          <button class="type-filter-btn" data-type="assignment">🎯 Assignments</button>
+          <button class="type-filter-btn" data-type="announcement">📢 Action Items</button>
+          <button class="type-filter-btn" data-type="manual">📝 Manual</button>
+          <button class="type-filter-btn" data-type="study">📖 Study</button>
         </div>
         <div class="filters-row">
           <select id="todo-course-filter" class="input-text" style="padding: 0.35rem 0.6rem; font-size: 0.8rem;">
@@ -79,7 +92,15 @@
 
       <!-- Quick Add Task -->
       <form class="add-task-form" id="form-add-task">
-        <input type="text" id="new-task-title" class="input-text" placeholder="Add custom action item or reminder..." required>
+        <select id="new-task-course" class="input-text" style="max-width: 160px; font-size: 0.82rem;">
+          <option value="">General</option>
+        </select>
+        <select id="new-task-priority" class="input-text" style="max-width: 110px; font-size: 0.82rem;">
+          <option value="high">🔴 High</option>
+          <option value="medium" selected>🟡 Medium</option>
+          <option value="low">🔵 Low</option>
+        </select>
+        <input type="text" id="new-task-title" class="input-text" placeholder="Add actionable task, assignment, or study goal..." required>
         <input type="datetime-local" id="new-task-due" class="input-date">
         <button type="submit" class="btn btn-primary" style="white-space: nowrap;">+ Add Task</button>
       </form>
@@ -90,7 +111,26 @@
       </div>
     </div>
 
-    <!-- Tab 2: Modules & Files -->
+    <!-- Tab 2: Academic Study Coverage -->
+    <div class="tab-content" id="tab-coverage">
+      <div class="coverage-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+          <select id="coverage-course-select" class="input-text" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
+            <option value="">All Active Modules</option>
+          </select>
+          <button class="btn btn-outline" id="btn-refresh-coverage" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;">🔄 Re-analyze Notes</button>
+        </div>
+        <button class="btn btn-primary" id="btn-copy-antigravity-prompt" style="font-size: 0.82rem;">
+          🤖 Copy Antigravity CLI Prompt
+        </button>
+      </div>
+
+      <div id="coverage-container">
+        <p style="color: var(--text-muted); text-align: center; padding: 2rem;">Analyzing module notes and study coverage...</p>
+      </div>
+    </div>
+
+    <!-- Tab 3: Modules & Files -->
     <div class="tab-content" id="tab-courses">
       <div class="courses-grid" id="courses-grid-container">
         <!-- Courses rendered via app.js -->
@@ -98,7 +138,7 @@
       </div>
     </div>
 
-    <!-- Tab 3: Announcements -->
+    <!-- Tab 4: Announcements -->
     <div class="tab-content" id="tab-announcements">
       <div class="announcement-list" id="announcements-container">
         <!-- Announcements rendered via app.js -->
@@ -106,7 +146,7 @@
       </div>
     </div>
 
-    <!-- Tab 4: Sync Console & Logs -->
+    <!-- Tab 5: Sync Console & Logs -->
     <div class="tab-content" id="tab-logs">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
         <span style="font-size: 0.85rem; color: var(--text-secondary);">Real-time Blackboard sync output:</span>
@@ -114,6 +154,48 @@
       </div>
       <div class="console-box" id="console-logs">
         <div class="log-entry" style="color: #94a3b8;">[System] Console initialized. Ready for sync operations.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Auto-Sync Configuration Modal -->
+  <div class="modal-overlay" id="modal-autosync">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3 style="font-size: 1.15rem; font-weight: 600;">⚙️ Automatic Sync Settings</h3>
+        <button class="modal-close" onclick="closeModal('modal-autosync')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color: var(--text-secondary); margin-bottom: 1.25rem; font-size: 0.88rem;">
+          Configure background synchronization. When enabled, Blackboard Automate automatically checks for new lecture slides, lab assignments, and deadline updates.
+        </p>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; padding: 0.75rem; background: var(--bg-card); border-radius: 0.5rem; border: 1px solid var(--border-color);">
+          <div>
+            <div style="font-weight: 600; font-size: 0.9rem;">Enable Background Auto-Sync</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">Syncs automatically in the background while dashboard runs</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="autosync-toggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem;">Sync Frequency:</label>
+          <select id="autosync-interval-select" class="input-text" style="width: 100%;">
+            <option value="1">Every 1 Hour</option>
+            <option value="2">Every 2 Hours</option>
+            <option value="4" selected>Every 4 Hours (Recommended)</option>
+            <option value="8">Every 8 Hours</option>
+            <option value="12">Every 12 Hours</option>
+            <option value="24">Every 24 Hours</option>
+          </select>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button class="btn btn-outline" onclick="closeModal('modal-autosync')">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-autosync">Save Preferences</button>
+        </div>
       </div>
     </div>
   </div>
@@ -139,6 +221,26 @@
           <a class="btn btn-outline" href="/calendar/deadlines.ics" download="deadlines.ics">
             Download .ics File
           </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Antigravity Prompt Modal -->
+  <div class="modal-overlay" id="modal-antigravity">
+    <div class="modal-content" style="max-width: 750px;">
+      <div class="modal-header">
+        <h3 style="font-size: 1.15rem; font-weight: 600;">🤖 Antigravity CLI Study Integration</h3>
+        <button class="modal-close" onclick="closeModal('modal-antigravity')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color: var(--text-secondary); margin-bottom: 0.75rem; font-size: 0.88rem;">
+          Run this command in your terminal using the Antigravity CLI (<code>agy</code>) or paste it into your chat to quiz yourself on your downloaded notes:
+        </p>
+        <div class="code-block" id="antigravity-prompt-box" style="white-space: pre-wrap; font-size: 0.85rem; padding: 1rem; max-height: 250px; overflow-y: auto;"></div>
+        <div style="margin-top: 1.25rem; display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button class="btn btn-outline" onclick="closeModal('modal-antigravity')">Close</button>
+          <button class="btn btn-primary" id="btn-copy-prompt-action">📋 Copy to Clipboard</button>
         </div>
       </div>
     </div>

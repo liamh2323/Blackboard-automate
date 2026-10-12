@@ -1,6 +1,7 @@
 import re
 import uuid
 import json
+import hashlib
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
@@ -51,60 +52,99 @@ def extract_assignment_task(item: Dict[str, Any], course_id: str, course_name: s
     }
 
 def extract_tasks_from_announcement_text(announcement: Dict[str, Any], course_name: str) -> List[Dict[str, Any]]:
-    """Uses regex & linguistic heuristic matching to detect action items from announcement text."""
+    """
+    De-noised task extractor: Analyzes announcement as a single unit and creates at most
+    ONE high-confidence actionable task only if an explicit deadline or mandatory action is present.
+    """
     aid = announcement.get("id", str(uuid.uuid4()))
     cid = announcement.get("course_id")
     title = announcement.get("title", "")
     content = announcement.get("markdown_body") or announcement.get("raw_html") or ""
 
     lines = [p.strip() for p in re.split(r'\n+|\.\s+', content) if len(p.strip()) > 10]
-    extracted = []
+    best_action_line = None
+    found_date_str = None
 
-    for idx, line in enumerate(lines):
+    # Check whole announcement text (title + body) for high priority / urgency flags
+    full_text_lower = f"{title} {content}".lower()
+    is_high_priority = any(w in full_text_lower for w in ["urgent", "penalty", "penalties", "graded", "mandatory", "must submit", "required"])
+
+    # Scan lines for action items and deadlines
+    for line in lines:
         has_action = any(re.search(kw, line, re.IGNORECASE) for kw in ACTION_KEYWORDS)
         if not has_action:
             continue
 
-        # Check for date or deadline reference
-        found_date_str = None
         for pattern in DATE_PATTERNS:
             match = re.search(pattern, line, re.IGNORECASE)
             if match and len(match.group(0).strip()) > 2:
                 found_date_str = match.group(0).strip()
                 break
 
-        # If action + date or explicit "due" phrase is present
-        if has_action and (found_date_str or "due" in line.lower() or "submit" in line.lower() or "deadline" in line.lower()):
-            clean_title = re.sub(r'[*_#`]', '', line).strip()
-            if len(clean_title) > 90:
-                clean_title = clean_title[:87] + "..."
+        line_lower = line.lower()
+        has_explicit_due = any(w in line_lower for w in ["due", "submit", "submission", "deadline", "hand in", "deliverable"])
 
-            task_id = f"ann_task_{aid}_{idx}"
-            desc = f"Extracted from announcement: \"{title}\"\n\nContext:\n\"{line}\""
-            if found_date_str:
-                desc += f"\n\nDetected deadline: {found_date_str}"
+        if has_explicit_due or found_date_str or any(w in line_lower for w in ["urgent", "penalty", "mandatory", "must submit"]):
+            best_action_line = line
+            break
 
-            # Guess priority
-            priority = "high" if any(w in line.lower() for w in ["urgent", "penalty", "graded", "mandatory", "must submit"]) else "medium"
+    # Only create a task if an explicit actionable requirement is found
+    if not best_action_line:
+        # Check if announcement title itself contains strong deadline signal
+        title_lower = title.lower()
+        if any(w in title_lower for w in ["due", "deadline", "submission", "assignment", "deliverable"]):
+            best_action_line = content[:150] if content else title
+        else:
+            return []
 
-            db.upsert_task(
-                tid=task_id,
-                cid=cid,
-                title=f"{course_name}: {clean_title}",
-                description=desc,
-                due_date=None, # Human readable date is preserved in description
-                source_type="announcement",
-                source_id=aid,
-                priority=priority
-            )
-            extracted.append({
-                "id": task_id,
-                "title": f"{course_name}: {clean_title}",
-                "context": line,
-                "priority": priority
-            })
+    # Clean title
+    clean_line = re.sub(r'[*_#`]', '', best_action_line).strip()
+    if len(clean_line) > 80:
+        clean_line = clean_line[:77] + "..."
 
-    return extracted
+    task_title = f"{course_name}: {title}" if len(title) > 5 else f"{course_name}: {clean_line}"
+    task_id = f"ann_task_{aid}"
+    desc = f"Announcement: \"{title}\"\n\nAction Item:\n\"{best_action_line}\""
+    if found_date_str:
+        desc += f"\n\nDetected Deadline: {found_date_str}"
+
+    priority = "high" if is_high_priority else "medium"
+
+    db.upsert_task(
+        tid=task_id,
+        cid=cid,
+        title=task_title,
+        description=desc,
+        due_date=None,
+        source_type="announcement",
+        source_id=aid,
+        priority=priority
+    )
+
+    return [{
+        "id": task_id,
+        "title": task_title,
+        "context": best_action_line,
+        "priority": priority
+    }]
+
+def extract_study_task(course_id: str, course_name: str, note_title: str, file_path: str) -> Optional[Dict[str, Any]]:
+    """Creates a study/review action item for newly converted lecture notes."""
+    tid = f"study_{hashlib.md5(file_path.encode()).hexdigest()[:12]}"
+    task_title = f"📖 Review: {note_title}"
+    desc = f"Study material for {course_name}.\nLocation: {file_path}"
+
+    db.upsert_task(
+        tid=tid,
+        cid=course_id,
+        title=f"{course_name}: {task_title}",
+        description=desc,
+        due_date=None,
+        source_type="study",
+        source_id=file_path,
+        priority="low"
+    )
+    return {"id": tid, "title": task_title, "source_type": "study"}
 
 def run_task_extraction_for_course(course: Dict[str, Any], tree_items: List[Dict[str, Any]], announcements: List[Dict[str, Any]]) -> Dict[str, int]:
     """Runs full task discovery across both assignment trees and course announcements."""

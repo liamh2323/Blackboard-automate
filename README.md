@@ -47,28 +47,49 @@ Default settings are configured out of the box for Trinity College Dublin (`http
 ### 3. One-Time 2FA Authentication
 
 ```bash
-python run.py --login
+./bb login
 ```
 A browser window will open. Enter your university credentials and approve the 2-Factor Authentication on your phone. Once your Blackboard dashboard loads, your profile is saved.
 
 ### 4. Start the Application
 
 ```bash
-python run.py
+./bb
 ```
-This launches the web dashboard at `http://localhost:8000` and automatically opens it in your default browser.
+This launches the web dashboard at `http://localhost:8000`, starts background auto-sync, and automatically opens it in your default browser.
 
 ---
 
-## 🛠️ CLI Options
+## 🛠️ Unified CLI (`bb`)
+
+Use the `./bb` script for fast, one-command management without having to manually activate virtual environments:
 
 | Command | Description |
 |---------|-------------|
-| `python run.py` | Starts the web dashboard server at `http://localhost:8000` |
-| `python run.py --sync-only` | Runs a one-time headless sync without starting the web UI |
-| `python run.py --login` | Opens the interactive browser window to refresh 2FA session |
-| `python run.py --convert-all` | Scans and converts any unconverted local PDFs to Markdown |
-| `python run.py --port 8080` | Runs the server on a custom port |
+| `./bb` | Starts dashboard server at `http://localhost:8000` with background auto-sync |
+| `./bb sync` | Runs one-time headless sync without starting web UI |
+| `./bb cover` / `./bb coverage` | Analyzes converted `.md` notes and outputs study roadmap for Antigravity |
+| `./bb login` | Opens Chromium window for 2FA login |
+| `./bb convert` | Scans and converts any unconverted local PDFs to Markdown |
+| `./bb test` | Runs the full automated test suite |
+| `./bb install` | Symlinks `bb` to `~/.local/bin/bb` so you can type `bb` from any folder |
+| `./bb --port 8080` | Starts server on a custom port |
+
+---
+
+## 🤖 Antigravity CLI Study Integration
+
+Blackboard Automate generates structured syllabus maps, concept checklists, and `STUDY_PLAN.md` documents directly from your downloaded Markdown notes.
+
+You can quiz yourself or generate revision study roadmaps using the Antigravity CLI (`agy`):
+
+```bash
+# Analyze study coverage directly in the terminal
+./bb cover
+
+# Quiz yourself on a specific module using Antigravity
+agy "Review the markdown notes in ./downloads/Systems Programming I and quiz me on memory management."
+```
 
 ---
 

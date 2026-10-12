@@ -13,6 +13,7 @@ from . import database as db
 from . import scheduler
 from . import auth
 from . import calendar as cal_gen
+from . import coverage
 from .config import BASE_DIR, DOWNLOAD_DIR, HOST, PORT, ENABLE_CALENDAR
 
 # Broadcast queue for real-time SSE logs
@@ -29,6 +30,7 @@ def broadcast_log(msg: str):
 async def lifespan(app: FastAPI):
     # Startup
     db.init_db()
+    db.cleanup_legacy_announcement_tasks()
     scheduler.start_scheduler()
     yield
     # Shutdown
@@ -44,11 +46,22 @@ class TaskCreate(BaseModel):
     description: Optional[str] = None
     priority: str = "medium"
 
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    course_id: Optional[str] = None
+    due_date: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[str] = None
+
 class TaskToggle(BaseModel):
     completed: bool
 
 class CourseToggle(BaseModel):
     is_active: bool
+
+class SchedulerConfig(BaseModel):
+    enabled: Optional[bool] = None
+    interval_hours: Optional[float] = None
 
 # --- API Endpoints ---
 
@@ -66,8 +79,9 @@ def toggle_course(course_id: str, payload: CourseToggle):
     return {"status": "ok", "course_id": course_id, "is_active": payload.is_active}
 
 @app.get("/api/tasks")
-def list_tasks(completed: Optional[bool] = None, course_id: Optional[str] = None):
-    return db.get_tasks(completed=completed, cid=course_id)
+def list_tasks(completed: Optional[bool] = None, course_id: Optional[str] = None,
+               source_type: Optional[str] = None, priority: Optional[str] = None):
+    return db.get_tasks(completed=completed, cid=course_id, source_type=source_type, priority=priority)
 
 @app.post("/api/tasks")
 def create_task(payload: TaskCreate):
@@ -85,6 +99,18 @@ def create_task(payload: TaskCreate):
     )
     return {"status": "created", "id": tid}
 
+@app.put("/api/tasks/{task_id}")
+def update_task_endpoint(task_id: str, payload: TaskUpdate):
+    db.update_task(
+        tid=task_id,
+        title=payload.title,
+        description=payload.description,
+        due_date=payload.due_date,
+        priority=payload.priority,
+        course_id=payload.course_id
+    )
+    return {"status": "ok", "id": task_id}
+
 @app.post("/api/tasks/{task_id}/complete")
 def toggle_task(task_id: str, payload: TaskToggle):
     db.toggle_task_completed(task_id, payload.completed)
@@ -94,6 +120,12 @@ def toggle_task(task_id: str, payload: TaskToggle):
 def delete_task(task_id: str):
     db.delete_task(task_id)
     return {"status": "deleted", "id": task_id}
+
+# --- Academic Study Coverage Endpoints ---
+
+@app.get("/api/coverage")
+def get_study_coverage(course_id: Optional[str] = None):
+    return coverage.build_study_coverage_report(course_id=course_id)
 
 @app.get("/api/announcements")
 def list_announcements(course_id: Optional[str] = None, limit: int = 50):
@@ -124,10 +156,11 @@ def get_file_content(path: str = Query(...)):
 
 @app.get("/api/sync/status")
 def sync_status():
-    return {
-        "is_syncing": scheduler.is_sync_active(),
-        "last_sync": db.get_dashboard_stats().get("last_sync")
-    }
+    return scheduler.get_scheduler_info()
+
+@app.post("/api/scheduler/config")
+def set_scheduler_config(payload: SchedulerConfig):
+    return scheduler.configure_scheduler(enabled=payload.enabled, interval_hours=payload.interval_hours)
 
 @app.post("/api/sync")
 def trigger_sync(background_tasks: BackgroundTasks):

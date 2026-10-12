@@ -1,0 +1,30 @@
+# Environment & Secrets
+.env
+*.env
+.blackboard_playwright_profile/
+
+# Python & Virtual Environments
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Runtime Data & Course Materials
+downloads/
+data/
+*.db
+*.sqlite3
+test_data/
+test_downloads/
+sync.log
+
+# Local Course Archives & External Cloned Repos
+Yr 2/
+blackboard-downloader/
+blackboard-sync-tcd/
+markitdown/
+https:/

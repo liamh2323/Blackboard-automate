@@ -150,10 +150,19 @@ def mark_file_converted(fid: str, markdown_path: str):
         cursor = conn.cursor()
         cursor.execute("UPDATE files SET is_converted=1, markdown_path=? WHERE id=?", (markdown_path, fid))
 
-def get_unconverted_files(limit: int = 100) -> List[Dict[str, Any]]:
+def get_unconverted_files(limit: int = 500) -> List[Dict[str, Any]]:
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM files WHERE is_converted=0 AND filename LIKE '%.pdf' LIMIT ?", (limit,))
+        cursor.execute("""
+            SELECT * FROM files
+            WHERE is_converted=0
+              AND (
+                filename LIKE '%.pdf' OR filename LIKE '%.docx' OR filename LIKE '%.doc'
+                OR filename LIKE '%.pptx' OR filename LIKE '%.ppt' OR filename LIKE '%.xlsx'
+                OR filename LIKE '%.txt'
+              )
+            LIMIT ?
+        """, (limit,))
         return [dict(row) for row in cursor.fetchall()]
 
 def get_files_by_course(cid: str) -> List[Dict[str, Any]]:

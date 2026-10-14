@@ -42,15 +42,34 @@ def index_existing_files(base_folder: Path) -> Dict[str, Dict]:
                 pass
     return index
 
+LECTURE_NAME_PATTERNS = [
+    re.compile(r"\bslides?\b"),           # "Week 4 Slides", "slides.pdf"
+    re.compile(r"\blec[\s_-]*\d+"),       # "lec3", "Lec_03"
+    re.compile(r"(?:^|[\s_-])l\d{1,2}\b"),  # "BUU22570 - L1", "CS101_L04"
+    re.compile(r"\bwk[\s_-]*\d+"),        # "wk2", "Wk_05"
+]
+# Note: a bare "lecture" is deliberately not matched here, since readings are often
+# titled per lecture (e.g. "Lecture 1 - Economist article"). The folder-level rule
+# further down still routes "lecture" paths to lectures/.
+
+def looks_like_lecture(text: str) -> bool:
+    """True if a filename or item title clearly identifies lecture slides."""
+    return any(p.search(text) for p in LECTURE_NAME_PATTERNS)
+
 def choose_destination_folder(course_folder: Path, remote_path: str, filename: str) -> Path:
     """Sorts file into logical subcategory folder based on path and file name."""
     lp = (remote_path or "").lower()
     lf = filename.lower()
+    # The last path segment is the item's own title (e.g. "Week 4 Slides"), which is
+    # more specific than its parent folders (e.g. "Readings & Slides").
+    item_title = lp.rsplit(">", 1)[-1].strip()
 
     if "lab" in lp or "lab" in lf:
         target = course_folder / "labs"
     elif "tutorial" in lp or "tutorial" in lf:
         target = course_folder / "tutorials"
+    elif looks_like_lecture(lf) or looks_like_lecture(item_title):
+        target = course_folder / "lectures"
     elif any(k in lp for k in ["assignment", "assessment", "coursework"]) or any(k in lf for k in ["assignment", "homework", "task"]):
         target = course_folder / "assignments"
     elif any(k in lp for k in ["reading", "paper", "book", "resource", "bibliography"]):
@@ -138,8 +157,9 @@ def download_and_process_file(page, base_url: str, course_id: str, course_folder
         file_size=len(body), content_hash=dl_hash
     )
 
-    # Convert to Markdown if it's a PDF
-    if dest_file.suffix.lower() == ".pdf":
+    # Convert to Markdown automatically if applicable
+    from .converter import SUPPORTED_CONVERTIBLE_EXTENSIONS
+    if dest_file.suffix.lower() in SUPPORTED_CONVERTIBLE_EXTENSIONS:
         file_record = {
             "id": item_id,
             "local_path": str(dest_file)

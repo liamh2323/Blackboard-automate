@@ -157,43 +157,39 @@ async function loadSchedulerStatus() {
     const res = await fetch('/api/sync/status');
     schedulerInfo = await res.json();
     const badge = document.getElementById('status-badge');
+    const setBadge = (state, text) => {
+      badge.classList.remove('is-on', 'is-off', 'is-syncing');
+      if (state) badge.classList.add(state);
+      badge.textContent = text;
+    };
 
     if (schedulerInfo.is_syncing) {
-      badge.textContent = '⚡ Syncing in Progress...';
-      badge.style.color = '#38bdf8';
-      badge.style.backgroundColor = 'rgba(56, 189, 248, 0.2)';
-      badge.style.borderColor = '#38bdf8';
+      setBadge('is-syncing', 'Syncing…');
       return;
     }
 
     if (!schedulerInfo.auto_sync_enabled) {
-      badge.textContent = 'Auto-Sync: Disabled';
-      badge.style.color = '#94a3b8';
-      badge.style.backgroundColor = 'rgba(148, 163, 184, 0.15)';
+      setBadge('is-off', 'Auto-sync off');
       return;
     }
 
     if (schedulerInfo.next_sync_time) {
-      const now = new Date();
-      const next = new Date(schedulerInfo.next_sync_time);
-      const diffMs = next - now;
+      const diffMs = new Date(schedulerInfo.next_sync_time) - new Date();
 
       if (diffMs <= 0) {
-        badge.textContent = 'Auto-Sync: Imminent...';
+        setBadge('is-on', 'Next sync imminent');
       } else {
         const diffMins = Math.floor(diffMs / 60000);
         if (diffMins < 60) {
-          badge.textContent = `Auto-Sync: in ${diffMins}m`;
+          setBadge('is-on', `Next sync in ${diffMins}m`);
         } else {
           const hours = Math.floor(diffMins / 60);
           const mins = diffMins % 60;
-          badge.textContent = `Auto-Sync: in ${hours}h ${mins}m`;
+          setBadge('is-on', `Next sync in ${hours}h ${mins}m`);
         }
       }
-      badge.style.color = '#a5b4fc';
-      badge.style.backgroundColor = 'rgba(99, 102, 241, 0.15)';
     } else {
-      badge.textContent = `Auto-Sync: Every ${schedulerInfo.interval_hours}h`;
+      setBadge('is-on', `Auto-sync every ${schedulerInfo.interval_hours}h`);
     }
   } catch (err) {
     console.error('Error loading scheduler status:', err);
@@ -210,31 +206,23 @@ async function loadCourses() {
     const taskFormSelect = document.getElementById('new-task-course');
     const coverageSelect = document.getElementById('coverage-course-select');
 
-    todoSelect.innerHTML = '<option value="">All Courses</option>';
-    taskFormSelect.innerHTML = '<option value="">General (No Course)</option>';
-    coverageSelect.innerHTML = '<option value="">All Active Modules</option>';
+    const populate = (select, defaultLabel) => {
+      const previous = select.value;
+      select.innerHTML = '';
+      select.appendChild(new Option(defaultLabel, ''));
+      activeCourses.forEach(c => select.appendChild(new Option(c.name, c.id)));
+      select.value = previous;
+      if (select.selectedIndex === -1) select.value = '';
+    };
 
-    activeCourses.forEach(c => {
-      const opt1 = document.createElement('option');
-      opt1.value = c.id;
-      opt1.textContent = c.name;
-      todoSelect.appendChild(opt1);
-
-      const opt2 = document.createElement('option');
-      opt2.value = c.id;
-      opt2.textContent = c.name;
-      taskFormSelect.appendChild(opt2);
-
-      const opt3 = document.createElement('option');
-      opt3.value = c.id;
-      opt3.textContent = c.name;
-      coverageSelect.appendChild(opt3);
-    });
+    populate(todoSelect, 'All courses');
+    populate(taskFormSelect, 'General');
+    populate(coverageSelect, 'All active modules');
 
     // Populate Courses Grid
     const container = document.getElementById('courses-grid-container');
     if (activeCourses.length === 0) {
-      container.innerHTML = '<p style="color: var(--text-muted); grid-column: 1/-1; text-align: center;">No courses indexed yet. Click "Sync Now" to auto-discover your enrolled modules.</p>';
+      container.innerHTML = emptyState('No modules indexed yet', 'Click “Sync now” to discover your enrolled modules.');
       return;
     }
 
@@ -246,22 +234,16 @@ async function loadCourses() {
               <h3>${escapeHtml(c.name)}</h3>
               <span class="course-code">${escapeHtml(c.code || '')}</span>
             </div>
-            <label class="switch" title="Toggle Sync for this Module">
-              <input type="checkbox" ${c.is_active ? 'checked' : ''} onchange="toggleCourseSync('${c.id}', this.checked)">
+            <label class="switch" title="Toggle sync for this module">
+              <input type="checkbox" ${c.is_active ? 'checked' : ''} onchange="toggleCourseSync(${jsArg(c.id)}, this.checked)">
               <span class="slider"></span>
             </label>
           </div>
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-            Folder: <code>${escapeHtml(c.folder || '')}</code>
-          </p>
+          <p class="course-folder"><code>${escapeHtml(c.folder || '')}</code></p>
         </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
-          <span style="font-size: 0.75rem; color: var(--text-secondary);">
-            Last Synced: ${c.last_synced_at ? new Date(c.last_synced_at).toLocaleTimeString() : 'Never'}
-          </span>
-          <button class="btn btn-outline" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" onclick="viewCourseFiles('${c.id}', '${escapeHtml(c.name)}')">
-            📁 Files
-          </button>
+        <div class="card-footer">
+          <span>Last synced: ${c.last_synced_at ? new Date(c.last_synced_at).toLocaleString() : 'Never'}</span>
+          <button class="btn btn-outline btn-sm" onclick="viewCourseFiles(${jsArg(c.id)}, ${jsArg(c.name)})">View files</button>
         </div>
       </div>
     `).join('');
@@ -283,48 +265,44 @@ async function loadTasks() {
     const container = document.getElementById('task-list-container');
 
     if (tasks.length === 0) {
-      container.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 2rem;">No to-do items matching selected filters.</p>';
+      container.innerHTML = emptyState('Nothing here', 'No to-do items match the selected filters.');
       return;
     }
 
+    const typeTags = {
+      assignment: ['Assignment', 'tag-assignment'],
+      announcement: ['Action item', 'tag-announcement'],
+      manual: ['Custom', 'tag-manual'],
+      study: ['Study review', 'tag-study'],
+    };
+
     container.innerHTML = tasks.map(t => {
       const isOverdue = t.due_date && new Date(t.due_date) < new Date() && !t.completed;
-      const formattedDue = t.due_date ? new Date(t.due_date).toLocaleString() : null;
+      const formattedDue = t.due_date
+        ? new Date(t.due_date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+        : null;
 
-      let tagLabel = '🎯 Assignment';
-      let tagClass = 'tag-assignment';
-
-      if (t.source_type === 'announcement') {
-        tagLabel = '📢 Action Item';
-        tagClass = 'tag-announcement';
-      } else if (t.source_type === 'manual') {
-        tagLabel = '📝 Custom';
-        tagClass = 'tag-manual';
-      } else if (t.source_type === 'study') {
-        tagLabel = '📖 Study Review';
-        tagClass = 'tag-study';
-      }
-
-      const priorityClass = t.priority === 'high' ? 'tag-priority-high' : (t.priority === 'low' ? 'tag-priority-low' : 'tag-priority-medium');
-      const priorityLabel = t.priority ? t.priority.toUpperCase() : 'MEDIUM';
+      const [tagLabel, tagClass] = typeTags[t.source_type] || typeTags.assignment;
+      const priority = ['high', 'medium', 'low'].includes(t.priority) ? t.priority : 'medium';
+      const priorityLabel = priority.charAt(0).toUpperCase() + priority.slice(1);
 
       return `
         <div class="task-card ${t.completed ? 'completed' : ''}">
           <div class="task-left">
-            <input type="checkbox" class="task-checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTask('${t.id}', this.checked)">
+            <input type="checkbox" class="task-checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTask(${jsArg(t.id)}, this.checked)" aria-label="Mark complete">
             <div class="task-info">
               <h4>${escapeHtml(t.title)}</h4>
               <div class="task-meta">
                 <span class="tag ${tagClass}">${tagLabel}</span>
-                <span class="tag ${priorityClass}">${priorityLabel}</span>
-                ${formattedDue ? `<span class="tag-due" style="${isOverdue ? 'color: #ef4444; font-weight: 600;' : ''}">📅 ${formattedDue} ${isOverdue ? '(Overdue)' : ''}</span>` : ''}
-                ${t.course_name ? `<span style="color: var(--text-muted);">| ${escapeHtml(t.course_name)}</span>` : ''}
+                <span class="tag tag-priority-${priority}">${priorityLabel}</span>
+                ${formattedDue ? `<span class="tag-due ${isOverdue ? 'is-overdue' : ''}">${isOverdue ? 'Overdue · ' : 'Due '}${formattedDue}</span>` : ''}
+                ${t.course_name ? `<span class="meta-sep">${escapeHtml(t.course_name)}</span>` : ''}
               </div>
-              ${t.description ? `<p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.4rem; white-space: pre-wrap;">${escapeHtml(t.description)}</p>` : ''}
+              ${t.description ? `<p class="task-desc">${escapeHtml(t.description)}</p>` : ''}
             </div>
           </div>
           <div class="task-actions">
-            <button class="btn-icon" title="Delete Task" onclick="deleteTask('${t.id}')">🗑️</button>
+            <button class="btn-icon" title="Delete task" aria-label="Delete task" onclick="deleteTask(${jsArg(t.id)})">${ICON_TRASH}</button>
           </div>
         </div>
       `;
@@ -337,28 +315,24 @@ async function loadTasks() {
 // --- Study Coverage Logic ---
 async function loadStudyCoverage(forceRefresh = false) {
   const container = document.getElementById('coverage-container');
-  container.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 2rem;">Analyzing markdown lecture slides and lab notes...</p>';
+  container.innerHTML = '<p class="empty-state">Analysing lecture slides and lab notes…</p>';
 
   try {
     const res = await fetch('/api/coverage');
     coverageData = await res.json();
     renderCoverageUI();
   } catch (err) {
-    container.innerHTML = `<p style="color: #ef4444; text-align: center; padding: 2rem;">Error analyzing study coverage: ${err}</p>`;
+    container.innerHTML = `<p class="empty-state is-error">Error analysing study coverage: ${escapeHtml(String(err))}</p>`;
   }
 }
 
 function renderCoverageUI() {
   const container = document.getElementById('coverage-container');
   if (!coverageData || !coverageData.courses || coverageData.courses.length === 0) {
-    container.innerHTML = `
-      <div style="text-align: center; padding: 3rem; color: var(--text-muted);">
-        <h3>No converted markdown notes found yet</h3>
-        <p style="margin-top: 0.5rem; font-size: 0.9rem;">
-          Click "⚡ Sync Now" to discover modules and convert PDF lecture notes to Markdown.
-        </p>
-      </div>
-    `;
+    container.innerHTML = emptyState(
+      'No converted notes yet',
+      'Click “Sync now” to discover modules and convert lecture notes to Markdown.'
+    );
     return;
   }
 
@@ -378,20 +352,15 @@ function renderCoverageUI() {
 
   const html = `
     <div class="coverage-summary-card">
-      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 0.75rem;">
-        <div>
-          <h3 style="font-size: 1.15rem; color: var(--text-primary); font-weight: 600;">Academic Syllabus & Study Roadmap</h3>
-          <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.2rem;">
-            Extracted from ${totalNotes} notes across ${courses.length} module(s). Estimated total revision time: <strong>${totalHours} hours</strong>.
-          </p>
-        </div>
-      </div>
+      <h3>Study roadmap</h3>
+      <p>
+        ${totalNotes} notes across ${courses.length} module${courses.length === 1 ? '' : 's'} ·
+        estimated revision time <strong>${totalHours} hours</strong>
+      </p>
       ${uniqueConcepts.length > 0 ? `
-        <div style="margin-top: 0.5rem;">
-          <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 0.25rem;">KEY CONCEPTS TO MASTER:</span>
-          <div>
-            ${uniqueConcepts.map(c => `<span class="concept-pill">${escapeHtml(c)}</span>`).join('')}
-          </div>
+        <div class="coverage-concepts">
+          <span class="section-label">Key concepts</span>
+          <div>${uniqueConcepts.map(c => `<span class="concept-pill">${escapeHtml(c)}</span>`).join('')}</div>
         </div>
       ` : ''}
     </div>
@@ -413,64 +382,51 @@ function renderCourseCoverageCard(course) {
           <h4 class="coverage-card-title">${escapeHtml(course.course_name)}</h4>
           <span class="course-code">${escapeHtml(course.course_code)}</span>
         </div>
-        <span class="tag tag-study">${notes.length} notes (~${course.estimated_review_minutes}m)</span>
+        <span class="tag tag-study">${notes.length} notes · ~${course.estimated_review_minutes}m</span>
       </div>
 
       ${course.top_concepts && course.top_concepts.length > 0 ? `
         <div>
-          <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600;">CORE MODULE TOPICS:</span>
-          <div style="margin-top: 0.25rem;">
-            ${course.top_concepts.slice(0, 8).map(c => `<span class="concept-pill">${escapeHtml(c)}</span>`).join('')}
-          </div>
+          <span class="section-label">Core topics</span>
+          <div>${course.top_concepts.slice(0, 8).map(c => `<span class="concept-pill">${escapeHtml(c)}</span>`).join('')}</div>
         </div>
       ` : ''}
 
-      <div style="border-top: 1px solid var(--border-color); padding-top: 0.75rem; margin-top: 0.25rem;">
-        <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 600;">TOPIC BREAKDOWN & CHECKLIST:</span>
+      <div class="coverage-section">
+        <span class="section-label">Checklist</span>
         <ul class="topic-checklist">
-          ${notes.length === 0 ? '<li style="font-size: 0.8rem; color: var(--text-muted);">No notes converted in this module yet.</li>' : ''}
-          ${notes.slice(0, 8).map((note, idx) => {
+          ${notes.length === 0 ? '<li class="topic-sub">No notes converted in this module yet.</li>' : ''}
+          ${notes.slice(0, 8).map(note => {
             const checkKey = `study_done_${note.filename}`;
             const isChecked = localStorage.getItem(checkKey) === 'true';
-            const icon = note.category === 'Lecture' ? '🎓' : (note.category === 'Lab' ? '💻' : '📖');
             return `
-              <li class="topic-check-item">
-                <input type="checkbox" id="${checkKey}" ${isChecked ? 'checked' : ''} onchange="toggleTopicChecked('${checkKey}', this.checked)">
-                <div style="flex: 1;">
-                  <label for="${checkKey}" style="cursor: pointer; ${isChecked ? 'text-decoration: line-through; color: var(--text-muted);' : ''}">
-                    <strong>${icon} ${escapeHtml(note.title)}</strong>
-                    <span style="font-size: 0.72rem; color: var(--text-muted); margin-left: 0.4rem;">(${note.estimated_minutes}m)</span>
+              <li class="topic-check-item ${isChecked ? 'is-done' : ''}">
+                <input type="checkbox" id="${escapeHtml(checkKey)}" ${isChecked ? 'checked' : ''} onchange="toggleTopicChecked(${jsArg(checkKey)}, this.checked, this)">
+                <div class="topic-body">
+                  <label for="${escapeHtml(checkKey)}">
+                    ${escapeHtml(note.title)}<span class="topic-minutes">${escapeHtml(note.category || '')}${note.category ? ' · ' : ''}${note.estimated_minutes}m</span>
                   </label>
                   ${note.topics && note.topics.length > 0 ? `
-                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.15rem;">
-                      • ${escapeHtml(note.topics.slice(0, 2).join(' • '))}
-                    </div>
+                    <div class="topic-sub">${escapeHtml(note.topics.slice(0, 2).join(' · '))}</div>
                   ` : ''}
                 </div>
-                <button class="btn btn-outline" style="padding: 0.15rem 0.4rem; font-size: 0.7rem;" onclick="previewMarkdownFile('${encodeURIComponent(note.path)}', '${escapeHtml(note.filename)}')">
-                  Read
-                </button>
+                <button class="btn btn-outline btn-xs" onclick="previewMarkdownFile(${jsArg(encodeURIComponent(note.path))}, ${jsArg(note.filename)})">Read</button>
               </li>
             `;
           }).join('')}
         </ul>
         ${notes.length > 8 ? `
-          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">
-            + ${notes.length - 8} more documents indexed in STUDY_PLAN.md
-          </div>
+          <div class="topic-more">+ ${notes.length - 8} more documents indexed in STUDY_PLAN.md</div>
         ` : ''}
       </div>
     </div>
   `;
 }
 
-function toggleTopicChecked(key, isChecked) {
+function toggleTopicChecked(key, isChecked, el) {
   localStorage.setItem(key, isChecked ? 'true' : 'false');
-  const label = document.querySelector(`label[for="${key}"]`);
-  if (label) {
-    label.style.textDecoration = isChecked ? 'line-through' : 'none';
-    label.style.color = isChecked ? 'var(--text-muted)' : 'inherit';
-  }
+  const item = el ? el.closest('.topic-check-item') : null;
+  if (item) item.classList.toggle('is-done', isChecked);
 }
 
 function openAntigravityModal() {
@@ -494,9 +450,9 @@ function copyAntigravityPromptToClipboard() {
   const box = document.getElementById('antigravity-prompt-box');
   navigator.clipboard.writeText(box.textContent).then(() => {
     const btn = document.getElementById('btn-copy-prompt-action');
-    btn.textContent = '✅ Copied to Clipboard!';
+    btn.textContent = 'Copied!';
     setTimeout(() => {
-      btn.textContent = '📋 Copy to Clipboard';
+      btn.textContent = 'Copy to clipboard';
       closeModal('modal-antigravity');
     }, 1500);
   });
@@ -510,7 +466,7 @@ async function loadAnnouncements() {
     const container = document.getElementById('announcements-container');
 
     if (anns.length === 0) {
-      container.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 2rem;">No announcements discovered yet. Run sync to fetch updates.</p>';
+      container.innerHTML = emptyState('No announcements yet', 'Run a sync to fetch updates from Blackboard.');
       return;
     }
 
@@ -519,14 +475,14 @@ async function loadAnnouncements() {
         <div class="announcement-header">
           <div>
             <h3>${escapeHtml(a.title)}</h3>
-            <span style="font-size: 0.75rem; color: #818cf8; font-weight: 600;">${escapeHtml(a.course_name || 'Course')}</span>
+            <span class="announcement-course">${escapeHtml(a.course_name || 'Course')}</span>
           </div>
-          <span style="font-size: 0.75rem; color: var(--text-muted);">
-            ${a.created_at ? new Date(a.created_at).toLocaleDateString() : ''}
+          <span class="announcement-date">
+            ${a.created_at ? new Date(a.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' }) : ''}
           </span>
         </div>
         <div class="announcement-body">
-          <pre style="white-space: pre-wrap; font-family: inherit; font-size: 0.88rem;">${escapeHtml(a.markdown_body || '')}</pre>
+          <pre>${escapeHtml(a.markdown_body || '')}</pre>
         </div>
       </div>
     `).join('');
@@ -578,7 +534,7 @@ async function toggleCourseSync(courseId, isActive) {
 async function triggerSync() {
   const btn = document.getElementById('btn-sync');
   btn.disabled = true;
-  btn.textContent = '⏳ Syncing...';
+  btn.textContent = 'Syncing…';
   appendConsoleLog('[System] Initiating manual sync job...');
 
   document.querySelector('[data-tab="tab-logs"]').click();
@@ -592,7 +548,7 @@ async function triggerSync() {
   } finally {
     setTimeout(() => {
       btn.disabled = false;
-      btn.textContent = '⚡ Sync Now';
+      btn.textContent = 'Sync now';
       loadAllData();
       loadStudyCoverage(true);
     }, 3000);
@@ -658,6 +614,11 @@ function appendConsoleLog(text) {
   const box = document.getElementById('console-logs');
   const entry = document.createElement('div');
   entry.className = 'log-entry';
+  if (/^\[(error|fatal)\]/i.test(text) || /\b(error|failed|exception)\b/i.test(text)) {
+    entry.classList.add('is-error');
+  } else if (/^\[system\]/i.test(text)) {
+    entry.classList.add('is-system');
+  }
   entry.textContent = text;
   box.appendChild(entry);
   box.scrollTop = box.scrollHeight;
@@ -677,20 +638,19 @@ async function viewCourseFiles(courseId, courseName) {
     const files = await res.json();
     const modalBody = document.getElementById('markdown-modal-body');
     const modalTitle = document.getElementById('markdown-modal-title');
-    modalTitle.textContent = `📁 Materials for ${courseName}`;
+    modalTitle.textContent = `Files · ${courseName}`;
+    modalBody.classList.add('is-list');
 
     if (files.length === 0) {
-      modalBody.textContent = 'No local files recorded for this module yet.';
+      modalBody.innerHTML = '<p class="empty-state">No local files recorded for this module yet.</p>';
     } else {
       modalBody.innerHTML = files.map(f => `
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem; border-bottom: 1px solid var(--border-color);">
+        <div class="file-row">
           <div>
-            <div style="font-weight: 600; color: #f8fafc;">${escapeHtml(f.filename)}</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(f.remote_path || '')}</div>
+            <div class="file-name">${escapeHtml(f.filename)}</div>
+            <div class="file-path">${escapeHtml(f.remote_path || '')}</div>
           </div>
-          <div style="display: flex; gap: 0.5rem;">
-            ${f.markdown_path ? `<button class="btn btn-outline" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="previewMarkdownFile('${encodeURIComponent(f.markdown_path)}', '${escapeHtml(f.filename)}')">📄 View Markdown</button>` : ''}
-          </div>
+          ${f.markdown_path ? `<button class="btn btn-outline btn-sm" onclick="previewMarkdownFile(${jsArg(encodeURIComponent(f.markdown_path))}, ${jsArg(f.filename)})">View markdown</button>` : ''}
         </div>
       `).join('');
     }
@@ -706,8 +666,11 @@ async function previewMarkdownFile(encodedPath, filename) {
     const path = decodeURIComponent(encodedPath);
     const res = await fetch(`/api/file-content?path=${encodeURIComponent(path)}`);
     const data = await res.json();
-    document.getElementById('markdown-modal-title').textContent = `📄 ${filename} (Markdown)`;
-    document.getElementById('markdown-modal-body').textContent = data.content || '(Empty document)';
+    const body = document.getElementById('markdown-modal-body');
+    document.getElementById('markdown-modal-title').textContent = filename;
+    body.classList.remove('is-list');
+    body.textContent = data.content || '(Empty document)';
+    body.scrollTop = 0;
     document.getElementById('modal-markdown').classList.add('active');
   } catch (err) {
     alert('Failed to load markdown content: ' + err);
@@ -718,7 +681,31 @@ function closeModal(modalId) {
   document.getElementById(modalId).classList.remove('active');
 }
 
+// Close modals on backdrop click or Escape
+document.addEventListener('click', (e) => {
+  if (e.target.classList && e.target.classList.contains('modal-overlay')) {
+    e.target.classList.remove('active');
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+  }
+});
+
+// --- Helpers ---
+const ICON_TRASH = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+
+function emptyState(title, message) {
+  return `<div class="empty-state"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(message)}</p></div>`;
+}
+
 function escapeHtml(str) {
   if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Safely embed a value as a JS string literal inside an inline HTML event attribute
+function jsArg(value) {
+  return escapeHtml(JSON.stringify(value == null ? '' : String(value)));
 }

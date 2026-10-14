@@ -5,174 +5,168 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Blackboard Automate</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20%220%22%20100%22%20100%22><text y=%22.9em%22 font-size=%2290%22>🎓</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎓</text></svg>">
 </head>
 <body>
-  <div class="app-container">
-    <header>
+  <header class="topbar">
+    <div class="topbar-inner">
       <div class="brand">
-        <span style="font-size: 1.75rem;">🎓</span>
-        <div>
-          <h1>Blackboard Automate</h1>
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>
         </div>
-        <span class="badge" id="status-badge" title="Auto-Sync Status">Auto-Sync: Ready</span>
+        <h1>Blackboard Automate</h1>
+        <span class="badge" id="status-badge" title="Auto-sync status">Auto-sync ready</span>
       </div>
       <div class="header-actions">
-        <button class="btn btn-outline" id="btn-autosync-settings" title="Configure background auto-sync schedule">
-          ⚙️ Auto-Sync
+        <button class="btn btn-ghost" id="btn-autosync-settings" title="Configure background auto-sync schedule">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+          Settings
         </button>
         <button class="btn btn-outline" id="btn-login" title="Open Chromium login window for 2FA">
-          🔑 2FA Login
+          2FA login
         </button>
-        <button class="btn btn-outline" id="btn-calendar" title="Google Calendar Subscription">
-          📅 Google Calendar
+        <button class="btn btn-outline" id="btn-calendar" title="Google Calendar subscription">
+          Calendar
         </button>
-        <button class="btn btn-primary" id="btn-sync">
-          ⚡ Sync Now
-        </button>
+        <button class="btn btn-primary" id="btn-sync">Sync now</button>
       </div>
-    </header>
+    </div>
+  </header>
 
+  <main class="app-container">
     <!-- Stats Overview -->
-    <div class="stats-grid">
+    <section class="stats-grid">
       <div class="stat-card">
-        <span class="stat-label">Active Modules</span>
+        <span class="stat-label">Active modules</span>
         <span class="stat-value" id="stat-courses">0</span>
         <span class="stat-hint">Sync enabled</span>
       </div>
       <div class="stat-card">
-        <span class="stat-label">Pending To-Dos</span>
-        <span class="stat-value" id="stat-tasks" style="color: #f87171;">0</span>
+        <span class="stat-label">Pending to-dos</span>
+        <span class="stat-value is-danger" id="stat-tasks">0</span>
         <span class="stat-hint">Upcoming deadlines</span>
       </div>
       <div class="stat-card">
-        <span class="stat-label">Materials Synced</span>
+        <span class="stat-label">Materials synced</span>
         <span class="stat-value" id="stat-files">0</span>
         <span class="stat-hint">Local course files</span>
       </div>
       <div class="stat-card">
-        <span class="stat-label">Markdown Converted</span>
-        <span class="stat-value" id="stat-markdown" style="color: #34d399;">0</span>
+        <span class="stat-label">Markdown converted</span>
+        <span class="stat-value is-success" id="stat-markdown">0</span>
         <span class="stat-hint">Notes generated</span>
       </div>
-    </div>
+    </section>
 
     <!-- Navigation Tabs -->
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="tab-todo">📋 To-Do & Deadlines</button>
-      <button class="tab-btn" data-tab="tab-coverage">📖 Study Coverage</button>
-      <button class="tab-btn" data-tab="tab-courses">📚 Modules & Files</button>
-      <button class="tab-btn" data-tab="tab-announcements">📢 Announcements</button>
-      <button class="tab-btn" data-tab="tab-logs">⚡ Sync Console</button>
-    </div>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="tab-todo">To-do</button>
+      <button class="tab-btn" data-tab="tab-coverage">Study coverage</button>
+      <button class="tab-btn" data-tab="tab-courses">Modules &amp; files</button>
+      <button class="tab-btn" data-tab="tab-announcements">Announcements</button>
+      <button class="tab-btn" data-tab="tab-logs">Sync console</button>
+    </nav>
 
     <!-- Tab 1: To-Do & Deadlines -->
-    <div class="tab-content active" id="tab-todo">
-      <div class="todo-controls">
-        <div class="filters-row">
-          <span style="font-size: 0.75rem; color: var(--text-muted); align-self: center; margin-right: 0.25rem;">Status:</span>
-          <button class="filter-btn active" data-filter="pending">Pending</button>
-          <button class="filter-btn" data-filter="all">All</button>
-          <button class="filter-btn" data-filter="completed">Completed</button>
+    <section class="tab-content active" id="tab-todo">
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <div class="segmented" role="group" aria-label="Status filter">
+            <button class="filter-btn active" data-filter="pending">Pending</button>
+            <button class="filter-btn" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="completed">Completed</button>
+          </div>
+          <button class="type-filter-btn active" data-type="">All types</button>
+          <button class="type-filter-btn" data-type="assignment">Assignments</button>
+          <button class="type-filter-btn" data-type="announcement">Action items</button>
+          <button class="type-filter-btn" data-type="manual">Manual</button>
+          <button class="type-filter-btn" data-type="study">Study</button>
         </div>
-        <div class="filters-row">
-          <span style="font-size: 0.75rem; color: var(--text-muted); align-self: center; margin-right: 0.25rem;">Type:</span>
-          <button class="type-filter-btn active" data-type="">All Types</button>
-          <button class="type-filter-btn" data-type="assignment">🎯 Assignments</button>
-          <button class="type-filter-btn" data-type="announcement">📢 Action Items</button>
-          <button class="type-filter-btn" data-type="manual">📝 Manual</button>
-          <button class="type-filter-btn" data-type="study">📖 Study</button>
-        </div>
-        <div class="filters-row">
-          <select id="todo-course-filter" class="input-text" style="padding: 0.35rem 0.6rem; font-size: 0.8rem;">
-            <option value="">All Courses</option>
+        <div class="toolbar-group">
+          <select id="todo-course-filter" class="input-text" aria-label="Filter by course">
+            <option value="">All courses</option>
           </select>
         </div>
       </div>
 
       <!-- Quick Add Task -->
       <form class="add-task-form" id="form-add-task">
-        <select id="new-task-course" class="input-text" style="max-width: 160px; font-size: 0.82rem;">
+        <input type="text" id="new-task-title" class="input-text" placeholder="Add a task, assignment or study goal…" required>
+        <select id="new-task-course" class="input-text" aria-label="Course">
           <option value="">General</option>
         </select>
-        <select id="new-task-priority" class="input-text" style="max-width: 110px; font-size: 0.82rem;">
-          <option value="high">🔴 High</option>
-          <option value="medium" selected>🟡 Medium</option>
-          <option value="low">🔵 Low</option>
+        <select id="new-task-priority" class="input-text" aria-label="Priority">
+          <option value="high">High priority</option>
+          <option value="medium" selected>Medium priority</option>
+          <option value="low">Low priority</option>
         </select>
-        <input type="text" id="new-task-title" class="input-text" placeholder="Add actionable task, assignment, or study goal..." required>
-        <input type="datetime-local" id="new-task-due" class="input-date">
-        <button type="submit" class="btn btn-primary" style="white-space: nowrap;">+ Add Task</button>
+        <input type="datetime-local" id="new-task-due" class="input-date" aria-label="Due date">
+        <button type="submit" class="btn btn-primary">Add task</button>
       </form>
 
       <div class="task-list" id="task-list-container">
-        <!-- Tasks rendered via app.js -->
-        <p style="color: var(--text-muted); text-align: center; padding: 2rem;">Loading to-do items...</p>
+        <p class="empty-state">Loading to-do items…</p>
       </div>
-    </div>
+    </section>
 
-    <!-- Tab 2: Academic Study Coverage -->
-    <div class="tab-content" id="tab-coverage">
-      <div class="coverage-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
-        <div style="display: flex; gap: 0.75rem; align-items: center;">
-          <select id="coverage-course-select" class="input-text" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
-            <option value="">All Active Modules</option>
+    <!-- Tab 2: Study Coverage -->
+    <section class="tab-content" id="tab-coverage">
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <select id="coverage-course-select" class="input-text" aria-label="Module">
+            <option value="">All active modules</option>
           </select>
-          <button class="btn btn-outline" id="btn-refresh-coverage" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;">🔄 Re-analyze Notes</button>
+          <button class="btn btn-outline" id="btn-refresh-coverage">Re-analyse notes</button>
         </div>
-        <button class="btn btn-primary" id="btn-copy-antigravity-prompt" style="font-size: 0.82rem;">
-          🤖 Copy Antigravity CLI Prompt
-        </button>
+        <button class="btn btn-primary" id="btn-copy-antigravity-prompt">Copy Antigravity CLI prompt</button>
       </div>
 
       <div id="coverage-container">
-        <p style="color: var(--text-muted); text-align: center; padding: 2rem;">Analyzing module notes and study coverage...</p>
+        <p class="empty-state">Analysing module notes and study coverage…</p>
       </div>
-    </div>
+    </section>
 
     <!-- Tab 3: Modules & Files -->
-    <div class="tab-content" id="tab-courses">
+    <section class="tab-content" id="tab-courses">
       <div class="courses-grid" id="courses-grid-container">
-        <!-- Courses rendered via app.js -->
-        <p style="color: var(--text-muted); text-align: center; padding: 2rem;">Loading course modules...</p>
+        <p class="empty-state">Loading course modules…</p>
       </div>
-    </div>
+    </section>
 
     <!-- Tab 4: Announcements -->
-    <div class="tab-content" id="tab-announcements">
+    <section class="tab-content" id="tab-announcements">
       <div class="announcement-list" id="announcements-container">
-        <!-- Announcements rendered via app.js -->
-        <p style="color: var(--text-muted); text-align: center; padding: 2rem;">Loading course announcements...</p>
+        <p class="empty-state">Loading course announcements…</p>
       </div>
-    </div>
+    </section>
 
-    <!-- Tab 5: Sync Console & Logs -->
-    <div class="tab-content" id="tab-logs">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-        <span style="font-size: 0.85rem; color: var(--text-secondary);">Real-time Blackboard sync output:</span>
-        <button class="btn btn-outline" id="btn-clear-logs" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">Clear Console</button>
+    <!-- Tab 5: Sync Console -->
+    <section class="tab-content" id="tab-logs">
+      <div class="toolbar">
+        <span class="toolbar-label">Real-time Blackboard sync output</span>
+        <button class="btn btn-outline btn-sm" id="btn-clear-logs">Clear console</button>
       </div>
       <div class="console-box" id="console-logs">
-        <div class="log-entry" style="color: #94a3b8;">[System] Console initialized. Ready for sync operations.</div>
+        <div class="log-entry is-system">[System] Console initialised. Ready for sync operations.</div>
       </div>
-    </div>
-  </div>
+    </section>
+  </main>
 
   <!-- Auto-Sync Configuration Modal -->
   <div class="modal-overlay" id="modal-autosync">
-    <div class="modal-content" style="max-width: 500px;">
+    <div class="modal-content modal-sm">
       <div class="modal-header">
-        <h3 style="font-size: 1.15rem; font-weight: 600;">⚙️ Automatic Sync Settings</h3>
-        <button class="modal-close" onclick="closeModal('modal-autosync')">&times;</button>
+        <h3>Automatic sync settings</h3>
+        <button class="modal-close" onclick="closeModal('modal-autosync')" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="color: var(--text-secondary); margin-bottom: 1.25rem; font-size: 0.88rem;">
-          Configure background synchronization. When enabled, Blackboard Automate automatically checks for new lecture slides, lab assignments, and deadline updates.
+        <p class="modal-text">
+          When enabled, Blackboard Automate periodically checks for new lecture slides, lab assignments and deadline updates.
         </p>
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; padding: 0.75rem; background: var(--bg-card); border-radius: 0.5rem; border: 1px solid var(--border-color);">
+        <div class="setting-row">
           <div>
-            <div style="font-weight: 600; font-size: 0.9rem;">Enable Background Auto-Sync</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">Syncs automatically in the background while dashboard runs</div>
+            <div class="setting-title">Background auto-sync</div>
+            <div class="setting-desc">Runs while the dashboard server is running</div>
           </div>
           <label class="switch">
             <input type="checkbox" id="autosync-toggle" checked>
@@ -180,21 +174,19 @@
           </label>
         </div>
 
-        <div style="margin-bottom: 1.5rem;">
-          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem;">Sync Frequency:</label>
-          <select id="autosync-interval-select" class="input-text" style="width: 100%;">
-            <option value="1">Every 1 Hour</option>
-            <option value="2">Every 2 Hours</option>
-            <option value="4" selected>Every 4 Hours (Recommended)</option>
-            <option value="8">Every 8 Hours</option>
-            <option value="12">Every 12 Hours</option>
-            <option value="24">Every 24 Hours</option>
-          </select>
-        </div>
+        <label class="field-label" for="autosync-interval-select">Sync frequency</label>
+        <select id="autosync-interval-select" class="input-text input-full">
+          <option value="1">Every hour</option>
+          <option value="2">Every 2 hours</option>
+          <option value="4" selected>Every 4 hours (recommended)</option>
+          <option value="8">Every 8 hours</option>
+          <option value="12">Every 12 hours</option>
+          <option value="24">Every 24 hours</option>
+        </select>
 
-        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <div class="modal-actions">
           <button class="btn btn-outline" onclick="closeModal('modal-autosync')">Cancel</button>
-          <button class="btn btn-primary" id="btn-save-autosync">Save Preferences</button>
+          <button class="btn btn-primary" id="btn-save-autosync">Save</button>
         </div>
       </div>
     </div>
@@ -204,23 +196,19 @@
   <div class="modal-overlay" id="modal-calendar">
     <div class="modal-content">
       <div class="modal-header">
-        <h3 style="font-size: 1.15rem; font-weight: 600;">📅 Google Calendar Subscription</h3>
-        <button class="modal-close" onclick="closeModal('modal-calendar')">&times;</button>
+        <h3>Calendar subscription</h3>
+        <button class="modal-close" onclick="closeModal('modal-calendar')" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem;">
-          Subscribe directly to your Blackboard deadlines in Google Calendar or Apple Calendar.
-          Events automatically update every time your local sync runs!
+        <p class="modal-text">
+          Subscribe to your Blackboard deadlines in Google Calendar or Apple Calendar.
+          Events update automatically every time a sync runs.
         </p>
-        <p style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem;">Live Feed URL:</p>
+        <label class="field-label">Live feed URL</label>
         <div class="code-block" id="calendar-url-block">http://localhost:8000/calendar/deadlines.ics</div>
-        <div style="margin-top: 1.5rem; display: flex; gap: 0.75rem;">
-          <a class="btn btn-primary" id="btn-gcal-subscribe" target="_blank" href="#">
-            Add to Google Calendar
-          </a>
-          <a class="btn btn-outline" href="/calendar/deadlines.ics" download="deadlines.ics">
-            Download .ics File
-          </a>
+        <div class="modal-actions start">
+          <a class="btn btn-primary" id="btn-gcal-subscribe" target="_blank" href="#">Add to Google Calendar</a>
+          <a class="btn btn-outline" href="/calendar/deadlines.ics" download="deadlines.ics">Download .ics</a>
         </div>
       </div>
     </div>
@@ -228,19 +216,19 @@
 
   <!-- Antigravity Prompt Modal -->
   <div class="modal-overlay" id="modal-antigravity">
-    <div class="modal-content" style="max-width: 750px;">
+    <div class="modal-content modal-lg">
       <div class="modal-header">
-        <h3 style="font-size: 1.15rem; font-weight: 600;">🤖 Antigravity CLI Study Integration</h3>
-        <button class="modal-close" onclick="closeModal('modal-antigravity')">&times;</button>
+        <h3>Antigravity CLI study prompt</h3>
+        <button class="modal-close" onclick="closeModal('modal-antigravity')" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="color: var(--text-secondary); margin-bottom: 0.75rem; font-size: 0.88rem;">
-          Run this command in your terminal using the Antigravity CLI (<code>agy</code>) or paste it into your chat to quiz yourself on your downloaded notes:
+        <p class="modal-text">
+          Run this in your terminal with the Antigravity CLI (<code>agy</code>), or paste it into a chat, to quiz yourself on your downloaded notes:
         </p>
-        <div class="code-block" id="antigravity-prompt-box" style="white-space: pre-wrap; font-size: 0.85rem; padding: 1rem; max-height: 250px; overflow-y: auto;"></div>
-        <div style="margin-top: 1.25rem; display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <div class="code-block is-prompt" id="antigravity-prompt-box"></div>
+        <div class="modal-actions">
           <button class="btn btn-outline" onclick="closeModal('modal-antigravity')">Close</button>
-          <button class="btn btn-primary" id="btn-copy-prompt-action">📋 Copy to Clipboard</button>
+          <button class="btn btn-primary" id="btn-copy-prompt-action">Copy to clipboard</button>
         </div>
       </div>
     </div>
@@ -248,14 +236,13 @@
 
   <!-- Markdown Viewer Modal -->
   <div class="modal-overlay" id="modal-markdown">
-    <div class="modal-content" style="max-width: 900px;">
+    <div class="modal-content modal-xl">
       <div class="modal-header">
-        <h3 id="markdown-modal-title" style="font-size: 1.15rem; font-weight: 600;">Document Viewer</h3>
-        <button class="modal-close" onclick="closeModal('modal-markdown')">&times;</button>
+        <h3 id="markdown-modal-title">Document viewer</h3>
+        <button class="modal-close" onclick="closeModal('modal-markdown')" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <div id="markdown-modal-body" style="white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.9rem; line-height: 1.6; color: #e2e8f0; background: #0b0f19; padding: 1.25rem; border-radius: 0.5rem; max-height: 65vh; overflow-y: auto;">
-        </div>
+        <div id="markdown-modal-body" class="markdown-viewer"></div>
       </div>
     </div>
   </div>

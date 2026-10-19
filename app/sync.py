@@ -1,5 +1,6 @@
 import os
 import json
+import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Callable, List, Dict, Any, Optional
@@ -270,6 +271,17 @@ def run_sync(log_callback: Optional[Callable[[str], None]] = None) -> Dict[str, 
         )
         logger(f"🎉 {summary}")
         db.finish_sync_run(run_id, "success", stats["new_files"], stats["new_files"], stats["new_tasks"], "\n".join(logs))
+
+
+    logger("☁️ Syncing downloaded files to Google Drive...")
+    subprocess.run([
+        "rclone", "sync",
+        str(DOWNLOAD_DIR),
+        "gdrive:Blackboard-Notes"
+    ], check=False)
+    logger("✅ Google Drive sync complete!")
+
+
 
         return {"status": "success", "stats": stats, "logs": logs}
 

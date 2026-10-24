@@ -39,6 +39,7 @@ Options:
   --port <PORT>   Specify custom port (default: 8000)
   --host <HOST>   Specify custom host (default: 127.0.0.1)
   --course <NAME> Filter coverage by course name/code
+  --download-mp4  Download MP4 videos (skipped by default to save bandwidth and time)
 EOF
 }
 

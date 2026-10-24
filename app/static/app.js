@@ -46,9 +46,18 @@ function setupEventListeners() {
   // 2FA Login Button
   document.getElementById('btn-login').addEventListener('click', triggerLogin);
 
-  // Auto-Sync Settings Button
+  // Auto-Sync & App Settings Buttons
   document.getElementById('btn-autosync-settings').addEventListener('click', openAutoSyncModal);
   document.getElementById('btn-save-autosync').addEventListener('click', saveAutoSyncPreferences);
+  const btnBrowse = document.getElementById('btn-browse-folder');
+  if (btnBrowse) btnBrowse.addEventListener('click', browseDownloadFolder);
+  const btnOpenDl = document.getElementById('btn-open-download-folder');
+  if (btnOpenDl) btnOpenDl.addEventListener('click', () => {
+    const dir = document.getElementById('setting-download-dir').value.trim();
+    openLocalFolder(dir || null);
+  });
+  const btnShortcut = document.getElementById('btn-create-shortcut');
+  if (btnShortcut) btnShortcut.addEventListener('click', createDesktopShortcut);
 
   // Calendar Modal Button
   document.getElementById('btn-calendar').addEventListener('click', openCalendarModal);
@@ -243,7 +252,10 @@ async function loadCourses() {
         </div>
         <div class="card-footer">
           <span>Last synced: ${c.last_synced_at ? new Date(c.last_synced_at).toLocaleString() : 'Never'}</span>
-          <button class="btn btn-outline btn-sm" onclick="viewCourseFiles(${jsArg(c.id)}, ${jsArg(c.name)})">View files</button>
+          <div class="card-footer-actions">
+            ${c.folder ? `<button class="btn btn-outline btn-sm" onclick="openLocalFolder(${jsArg(c.folder)})" title="Open in File Explorer">Open folder</button>` : ''}
+            <button class="btn btn-outline btn-sm" onclick="viewCourseFiles(${jsArg(c.id)}, ${jsArg(c.name)})">View files</button>
+          </div>
         </div>
       </div>
     `).join('');
@@ -573,13 +585,24 @@ async function triggerLogin() {
   }
 }
 
-// --- Auto-Sync Settings Modal ---
-function openAutoSyncModal() {
-  if (schedulerInfo) {
-    document.getElementById('autosync-toggle').checked = !!schedulerInfo.auto_sync_enabled;
-    const intervalSelect = document.getElementById('autosync-interval-select');
-    const hours = Math.round(schedulerInfo.interval_hours);
-    intervalSelect.value = String(hours);
+// --- Application & Auto-Sync Settings Modal ---
+async function openAutoSyncModal() {
+  try {
+    const res = await fetch('/api/settings');
+    if (res.ok) {
+      const settings = await res.json();
+      document.getElementById('setting-download-dir').value = settings.download_dir || '';
+      document.getElementById('autosync-toggle').checked = !!settings.auto_sync_enabled;
+      document.getElementById('setting-skip-mp4').checked = !!settings.skip_mp4_downloads;
+      document.getElementById('setting-term-filter').value = settings.term_filter || '';
+      document.getElementById('setting-blackboard-url').value = settings.blackboard_url || '';
+
+      const intervalSelect = document.getElementById('autosync-interval-select');
+      const hours = Math.round(settings.interval_hours || 4);
+      intervalSelect.value = String(hours);
+    }
+  } catch (err) {
+    console.error('Error loading settings:', err);
   }
   document.getElementById('modal-autosync').classList.add('active');
 }
@@ -587,18 +610,93 @@ function openAutoSyncModal() {
 async function saveAutoSyncPreferences() {
   const enabled = document.getElementById('autosync-toggle').checked;
   const interval = parseFloat(document.getElementById('autosync-interval-select').value);
+  const download_dir = document.getElementById('setting-download-dir').value.trim();
+  const skip_mp4_downloads = document.getElementById('setting-skip-mp4').checked;
+  const term_filter = document.getElementById('setting-term-filter').value.trim();
+  const blackboard_url = document.getElementById('setting-blackboard-url').value.trim();
 
   try {
-    const res = await fetch('/api/scheduler/config', {
+    const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled, interval_hours: interval })
+      body: JSON.stringify({
+        auto_sync_enabled: enabled,
+        interval_hours: interval,
+        download_dir,
+        skip_mp4_downloads,
+        term_filter,
+        blackboard_url
+      })
     });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || 'Failed to save settings');
+    }
     schedulerInfo = await res.json();
     closeModal('modal-autosync');
     loadSchedulerStatus();
   } catch (err) {
-    alert('Failed to save scheduler preferences: ' + err);
+    alert('Failed to save settings: ' + err.message);
+  }
+}
+
+async function browseDownloadFolder() {
+  const btn = document.getElementById('btn-browse-folder');
+  const currentPath = document.getElementById('setting-download-dir').value.trim();
+  btn.disabled = true;
+  btn.textContent = 'Opening…';
+  try {
+    const res = await fetch('/api/settings/browse-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: currentPath || null })
+    });
+    const data = await res.json();
+    if (data.status === 'selected' && data.path) {
+      document.getElementById('setting-download-dir').value = data.path;
+    }
+  } catch (err) {
+    console.error('Folder picker error:', err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Browse…';
+  }
+}
+
+async function openLocalFolder(folderPath) {
+  try {
+    const res = await fetch('/api/settings/open-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: folderPath || null })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || 'Could not open folder.');
+    }
+  } catch (err) {
+    console.error('Failed to open folder:', err);
+  }
+}
+
+async function createDesktopShortcut() {
+  const btn = document.getElementById('btn-create-shortcut');
+  const desc = document.getElementById('shortcut-status-desc');
+  btn.disabled = true;
+  btn.textContent = 'Creating…';
+  try {
+    const res = await fetch('/api/settings/desktop-shortcut', { method: 'POST' });
+    const data = await res.json();
+    if (desc) desc.textContent = data.message || 'Shortcut updated.';
+    btn.textContent = data.status === 'ok' ? 'Created!' : 'Retry';
+  } catch (err) {
+    if (desc) desc.textContent = 'Failed to create shortcut.';
+    btn.textContent = 'Retry';
+  } finally {
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = 'Create shortcut';
+    }, 2500);
   }
 }
 

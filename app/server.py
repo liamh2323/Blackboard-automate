@@ -14,7 +14,9 @@ from . import scheduler
 from . import auth
 from . import calendar as cal_gen
 from . import coverage
-from .config import BASE_DIR, DOWNLOAD_DIR, HOST, PORT, ENABLE_CALENDAR
+from . import config
+from . import desktop
+from .config import BASE_DIR, DOWNLOAD_DIR, HOST, PORT, ENABLE_CALENDAR, STATIC_DIR
 
 # Broadcast queue for real-time SSE logs
 log_subscribers: List[asyncio.Queue] = []
@@ -30,7 +32,10 @@ def broadcast_log(msg: str):
 async def lifespan(app: FastAPI):
     # Startup
     db.init_db()
+    config.load_persisted_settings()
     db.cleanup_legacy_announcement_tasks()
+    if config.IS_WINDOWS:
+        desktop.create_desktop_shortcut(force=False)
     scheduler.start_scheduler()
     yield
     # Shutdown
@@ -62,6 +67,18 @@ class CourseToggle(BaseModel):
 class SchedulerConfig(BaseModel):
     enabled: Optional[bool] = None
     interval_hours: Optional[float] = None
+
+class AppSettingsUpdate(BaseModel):
+    download_dir: Optional[str] = None
+    blackboard_url: Optional[str] = None
+    term_filter: Optional[str] = None
+    skip_mp4_downloads: Optional[bool] = None
+    browser_channel: Optional[str] = None
+    auto_sync_enabled: Optional[bool] = None
+    interval_hours: Optional[float] = None
+
+class FolderActionRequest(BaseModel):
+    path: Optional[str] = None
 
 # --- API Endpoints ---
 
@@ -140,8 +157,15 @@ def list_files(course_id: Optional[str] = None):
 @app.get("/api/file-content")
 def get_file_content(path: str = Query(...)):
     target = Path(path).resolve()
-    # Security check: ensure path is inside workspace or download directory
-    allowed_roots = [BASE_DIR.resolve(), DOWNLOAD_DIR.resolve()]
+    # Security check: ensure path is inside workspace, download directory, or a registered course folder
+    allowed_roots = [config.BASE_DIR.resolve(), config.DOWNLOAD_DIR.resolve()]
+    try:
+        for c in db.get_courses():
+            if c.get("folder"):
+                allowed_roots.append(Path(c["folder"]).resolve())
+    except Exception:
+        pass
+
     if not any(str(target).startswith(str(root)) for root in allowed_roots):
         raise HTTPException(status_code=403, detail="Access denied to requested file path.")
     if not target.exists() or not target.is_file():
@@ -161,6 +185,64 @@ def sync_status():
 @app.post("/api/scheduler/config")
 def set_scheduler_config(payload: SchedulerConfig):
     return scheduler.configure_scheduler(enabled=payload.enabled, interval_hours=payload.interval_hours)
+
+@app.get("/api/settings")
+def get_app_settings():
+    sched = scheduler.get_scheduler_info()
+    runtime = config.get_runtime_settings()
+    return {
+        **runtime,
+        "auto_sync_enabled": sched["auto_sync_enabled"],
+        "interval_hours": sched["interval_hours"],
+    }
+
+@app.post("/api/settings")
+def update_app_settings(payload: AppSettingsUpdate):
+    try:
+        runtime = config.update_runtime_settings(
+            download_dir=payload.download_dir,
+            blackboard_url=payload.blackboard_url,
+            term_filter=payload.term_filter,
+            skip_mp4_downloads=payload.skip_mp4_downloads,
+            browser_channel=payload.browser_channel,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid settings: {e}")
+
+    if payload.auto_sync_enabled is not None or payload.interval_hours is not None:
+        sched = scheduler.configure_scheduler(
+            enabled=payload.auto_sync_enabled,
+            interval_hours=payload.interval_hours,
+        )
+    else:
+        sched = scheduler.get_scheduler_info()
+
+    return {
+        **runtime,
+        "auto_sync_enabled": sched["auto_sync_enabled"],
+        "interval_hours": sched["interval_hours"],
+    }
+
+@app.post("/api/settings/browse-folder")
+def browse_download_folder(payload: Optional[FolderActionRequest] = None):
+    initial = payload.path if payload and payload.path else str(config.DOWNLOAD_DIR)
+    chosen = desktop.pick_folder_dialog(initial_dir=initial)
+    if chosen:
+        return {"status": "selected", "path": chosen}
+    return {"status": "cancelled", "path": None}
+
+@app.post("/api/settings/open-folder")
+def open_local_folder(payload: Optional[FolderActionRequest] = None):
+    folder = payload.path if payload and payload.path else str(config.DOWNLOAD_DIR)
+    ok, msg = desktop.open_folder_in_explorer(folder)
+    if not ok:
+        raise HTTPException(status_code=500, detail=f"Could not open folder: {msg}")
+    return {"status": "opened", "path": msg}
+
+@app.post("/api/settings/desktop-shortcut")
+def create_shortcut_endpoint():
+    ok, msg = desktop.create_desktop_shortcut(force=True)
+    return {"status": "ok" if ok else "error", "message": msg}
 
 @app.post("/api/sync")
 def trigger_sync(background_tasks: BackgroundTasks):
@@ -214,6 +296,8 @@ def serve_deadlines_calendar():
     })
 
 # --- Mount Static Frontend ---
-static_dir = Path(__file__).parent / "static"
-static_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+try:
+    STATIC_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
+app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

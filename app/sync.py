@@ -6,12 +6,9 @@ from typing import Callable, List, Dict, Any, Optional
 
 from playwright.sync_api import sync_playwright
 
-from .config import (
-    BASE_URL, SAML_PATH, PROFILE_PATH, DOWNLOAD_DIR,
-    TERM_FILTER, HEADLESS, ENABLE_CALENDAR
-)
+from . import config
 from . import database as db
-from .auth import is_session_valid
+from .auth import is_session_valid, launch_browser_context
 from .downloader import sanitize_name, index_existing_files, download_and_process_file
 from .converter import html_to_markdown
 from .tasks import run_task_extraction_for_course
@@ -20,13 +17,13 @@ from .calendar import save_calendars_to_disk
 def fetch_enrolled_courses(page, logger=print) -> List[Dict[str, Any]]:
     """Discovers all enrolled courses from Blackboard REST API and syncs them to DB."""
     logger("🔍 Discovering enrolled courses from Blackboard...")
-    res_me = page.request.get(f"{BASE_URL}/learn/api/v1/users/me")
+    res_me = page.request.get(f"{config.BASE_URL}/learn/api/v1/users/me")
     if res_me.status != 200:
         logger(f"❌ Failed to query current user profile (HTTP {res_me.status})")
         return []
 
     user_id = res_me.json().get("id")
-    memberships_url = f"{BASE_URL}/learn/api/v1/users/{user_id}/memberships?expand=course.effectiveAvailability,course.permissions,courseRole&includeCount=true&limit=100"
+    memberships_url = f"{config.BASE_URL}/learn/api/v1/users/{user_id}/memberships?expand=course.effectiveAvailability,course.permissions,courseRole&includeCount=true&limit=100"
     res = page.request.get(memberships_url)
     if res.status != 200:
         logger(f"❌ Failed to query course memberships (HTTP {res.status})")
@@ -41,11 +38,11 @@ def fetch_enrolled_courses(page, logger=print) -> List[Dict[str, Any]]:
         code = c_info.get("courseId", "")
         name = c_info.get("name", "")
 
-        if TERM_FILTER and TERM_FILTER not in code:
+        if config.TERM_FILTER and config.TERM_FILTER not in code:
             continue
 
         folder_name = sanitize_name(name)
-        course_folder = DOWNLOAD_DIR / folder_name
+        course_folder = config.DOWNLOAD_DIR / folder_name
         course_folder.mkdir(parents=True, exist_ok=True)
 
         db.upsert_course(cid, code, name, str(course_folder))
@@ -61,7 +58,7 @@ def fetch_enrolled_courses(page, logger=print) -> List[Dict[str, Any]]:
 
 def fetch_course_tree(page, course_id: str, parent_id: str = "ROOT", path: str = "") -> List[Dict[str, Any]]:
     """Recursively walks Blackboard course contents folder tree."""
-    url = f"{BASE_URL}/learn/api/v1/courses/{course_id}/contents/{parent_id}/children"
+    url = f"{config.BASE_URL}/learn/api/v1/courses/{course_id}/contents/{parent_id}/children"
     res = page.request.get(url)
     if res.status != 200:
         return []
@@ -109,7 +106,7 @@ def fetch_course_tree(page, course_id: str, parent_id: str = "ROOT", path: str =
 
 def fetch_course_announcements(page, course_id: str) -> List[Dict[str, Any]]:
     """Fetches all recent course announcements."""
-    ann_url = f"{BASE_URL}/learn/api/v1/courses/{course_id}/announcements"
+    ann_url = f"{config.BASE_URL}/learn/api/v1/courses/{course_id}/announcements"
     res = page.request.get(ann_url)
     if res.status != 200:
         return []
@@ -166,11 +163,13 @@ def run_sync(log_callback: Optional[Callable[[str], None]] = None) -> Dict[str, 
 
     logger("🚀 Starting Blackboard Academic Synchronization Engine...")
     db.init_db()
+    config.load_persisted_settings()
     run_id = db.start_sync_run()
 
     stats = {
         "new_files": 0,
         "deduped_files": 0,
+        "skipped_files": 0,
         "failed_files": 0,
         "new_tasks": 0,
         "announcements": 0
@@ -178,22 +177,23 @@ def run_sync(log_callback: Optional[Callable[[str], None]] = None) -> Dict[str, 
 
     try:
         with sync_playwright() as p:
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=PROFILE_PATH,
-                headless=HEADLESS
+            ctx = launch_browser_context(
+                p,
+                headless=config.HEADLESS,
+                logger=logger
             )
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
             # Navigate to session or SAML entry
             try:
-                target_url = f"{BASE_URL}{SAML_PATH}" if SAML_PATH.startswith("/") else SAML_PATH
+                target_url = f"{config.BASE_URL}{config.SAML_PATH}" if config.SAML_PATH.startswith("/") else config.SAML_PATH
                 page.goto(target_url)
                 page.wait_for_selector("h4, .base-personal-avatar, #main-heading", timeout=15000)
             except Exception:
                 pass
 
             if not is_session_valid(page):
-                logger("❌ Session is not authenticated! Please click 'Login' to authorize with 2FA.")
+                logger("❌ Session is not authenticated! Please click '2FA login' to authorize with 2FA.")
                 ctx.close()
                 db.finish_sync_run(run_id, "failed", 0, 0, 0, "\n".join(logs))
                 return {"status": "error", "message": "Authentication required", "logs": logs}
@@ -232,7 +232,7 @@ def run_sync(log_callback: Optional[Callable[[str], None]] = None) -> Dict[str, 
                         continue
                     downloaded, status = download_and_process_file(
                         page=page,
-                        base_url=BASE_URL,
+                        base_url=config.BASE_URL,
                         course_id=cid,
                         course_folder=cfolder,
                         item=item,
@@ -243,6 +243,8 @@ def run_sync(log_callback: Optional[Callable[[str], None]] = None) -> Dict[str, 
                         stats["new_files"] += 1
                     elif "deduped" in status:
                         stats["deduped_files"] += 1
+                    elif "skipped" in status:
+                        stats["skipped_files"] += 1
                     elif "error" in status or "http" in status:
                         stats["failed_files"] += 1
 
@@ -250,9 +252,9 @@ def run_sync(log_callback: Optional[Callable[[str], None]] = None) -> Dict[str, 
 
             # 5. Calendar Fetch
             cal_events = []
-            if ENABLE_CALENDAR:
+            if config.ENABLE_CALENDAR:
                 logger("📅 Syncing semester calendar and deadlines...")
-                cal_url = f"{BASE_URL}/learn/api/v1/calendars/calendarItems?since={datetime.now().year}-01-01T00:00:00.000Z&until={datetime.now().year}-12-31T23:59:59.000Z"
+                cal_url = f"{config.BASE_URL}/learn/api/v1/calendars/calendarItems?since={datetime.now().year}-01-01T00:00:00.000Z&until={datetime.now().year}-12-31T23:59:59.000Z"
                 cal_res = page.request.get(cal_url)
                 if cal_res.status == 200:
                     cal_events = cal_res.json().get("results", [])
@@ -260,13 +262,13 @@ def run_sync(log_callback: Optional[Callable[[str], None]] = None) -> Dict[str, 
             ctx.close()
 
         # Save .ics calendar files
-        if ENABLE_CALENDAR:
+        if config.ENABLE_CALENDAR:
             cal_paths = save_calendars_to_disk(cal_events)
             logger(f"✅ Generated updated .ics calendar feeds: {list(cal_paths.keys())}")
 
         summary = (
             f"Sync Complete: {stats['new_files']} downloaded, "
-            f"{stats['deduped_files']} deduped, {stats['new_tasks']} tasks found."
+            f"{stats['deduped_files']} deduped, {stats['skipped_files']} skipped, {stats['new_tasks']} tasks found."
         )
         logger(f"🎉 {summary}")
         db.finish_sync_run(run_id, "success", stats["new_files"], stats["new_files"], stats["new_tasks"], "\n".join(logs))

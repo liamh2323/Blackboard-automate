@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from . import database as db
-from .config import DOWNLOAD_DIR
+from . import config
 
 def format_iso_to_ical_utc(iso_str: str) -> str:
     """Converts ISO 8601 string (e.g. 2026-10-23T22:00:00.000Z) to iCalendar UTC format (20261023T220000Z)."""
@@ -112,18 +112,19 @@ def generate_timetable_ics(events: List[Dict[str, Any]]) -> str:
 
 def save_calendars_to_disk(timetable_events: Optional[List[Dict[str, Any]]] = None) -> Dict[str, str]:
     """Writes calendar files to the download directory for local subscription or manual import."""
-    DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    dl_dir = config.DOWNLOAD_DIR
+    dl_dir.mkdir(parents=True, exist_ok=True)
     paths = {}
 
     deadlines_content = generate_deadlines_ics()
-    deadlines_file = DOWNLOAD_DIR / "Assignments_and_Deadlines.ics"
+    deadlines_file = dl_dir / "Assignments_and_Deadlines.ics"
     with open(deadlines_file, "w", encoding="utf-8") as f:
         f.write(deadlines_content)
     paths["deadlines"] = str(deadlines_file)
 
     if timetable_events:
         tt_content = generate_timetable_ics(timetable_events)
-        tt_file = DOWNLOAD_DIR / "Semester_Timetable.ics"
+        tt_file = dl_dir / "Semester_Timetable.ics"
         with open(tt_file, "w", encoding="utf-8") as f:
             f.write(tt_content)
         paths["timetable"] = str(tt_file)

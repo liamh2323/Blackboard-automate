@@ -1,10 +1,22 @@
 import os
 import unittest
+import tempfile
 from pathlib import Path
 
-# Set test environment
-os.environ["DOWNLOAD_DIR"] = "./test_downloads"
-os.environ["DATA_DIR"] = "./test_data"
+# Set test environment: probe if current directory is writable, otherwise use /tmp
+try:
+    _probe = Path("./test_probe.tmp")
+    _probe.touch()
+    _probe.unlink()
+    TEST_DIR_BASE = Path(".")
+except OSError:
+    TEST_DIR_BASE = Path(tempfile.gettempdir()) / "bb_test"
+
+TEST_DATA_DIR = (TEST_DIR_BASE / "test_data").resolve()
+TEST_DOWNLOAD_DIR = (TEST_DIR_BASE / "test_downloads").resolve()
+
+os.environ["DOWNLOAD_DIR"] = str(TEST_DOWNLOAD_DIR)
+os.environ["DATA_DIR"] = str(TEST_DATA_DIR)
 
 from app import database as db
 from app.converter import html_to_markdown
@@ -17,18 +29,18 @@ class TestBlackboardAutomate(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        Path("./test_data").mkdir(exist_ok=True)
-        Path("./test_downloads").mkdir(exist_ok=True)
+        TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        TEST_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
         db.init_db()
 
     @classmethod
     def tearDownClass(cls):
         import shutil
-        shutil.rmtree("./test_data", ignore_errors=True)
-        shutil.rmtree("./test_downloads", ignore_errors=True)
+        shutil.rmtree(TEST_DATA_DIR, ignore_errors=True)
+        shutil.rmtree(TEST_DOWNLOAD_DIR, ignore_errors=True)
 
     def test_01_database_and_courses(self):
-        db.upsert_course("test_c1", "CS2001", "Systems Programming I", "./test_downloads/Systems")
+        db.upsert_course("test_c1", "CS2001", "Systems Programming I", str(TEST_DOWNLOAD_DIR / "Systems"))
         courses = db.get_courses()
         self.assertTrue(any(c["id"] == "test_c1" for c in courses))
 
@@ -133,7 +145,7 @@ class TestBlackboardAutomate(unittest.TestCase):
         from app import coverage
 
         # Create temporary markdown note in test downloads
-        course_dir = Path("./test_downloads/Systems")
+        course_dir = TEST_DOWNLOAD_DIR / "Systems"
         course_dir.mkdir(parents=True, exist_ok=True)
         lec_file = course_dir / "week1_virtual_memory.md"
         with open(lec_file, "w", encoding="utf-8") as f:
@@ -232,6 +244,112 @@ The **TLB** caches recent virtual-to-physical translations.
         data = res.json()
         self.assertIn("courses", data)
         self.assertIn("total_courses", data)
+
+    def test_12_skip_mp4_downloads(self):
+        from app.downloader import is_mp4_file, download_and_process_file
+
+        # Check MP4 detection
+        self.assertTrue(is_mp4_file("lecture_recording.mp4"))
+        self.assertTrue(is_mp4_file("video.MP4"))
+        self.assertTrue(is_mp4_file("screencast.m4v"))
+        self.assertTrue(is_mp4_file("some_file", mime_type="video/mp4"))
+        self.assertTrue(is_mp4_file("some_file", mime_type="video/x-m4v"))
+        self.assertTrue(is_mp4_file("stream", url="https://example.com/video.mp4?token=123"))
+
+        # Non-MP4 files
+        self.assertFalse(is_mp4_file("slides.pdf"))
+        self.assertFalse(is_mp4_file("lab.docx"))
+        self.assertFalse(is_mp4_file("notes.txt", mime_type="text/plain"))
+
+        # Mock page to verify it is NOT contacted when skipping
+        class MockPage:
+            def __init__(self):
+                self.called = False
+            @property
+            def request(self):
+                self.called = True
+                return self
+            def get(self, url):
+                self.called = True
+                raise RuntimeError("Network should not be contacted for skipped MP4s")
+
+        mock_page = MockPage()
+        item = {
+            "fileName": "lecture_01.mp4",
+            "permanentUrl": "/webapps/lecture_01.mp4",
+            "fileSize": 1024 * 1024 * 50,
+            "mimeType": "video/mp4"
+        }
+        course_folder = TEST_DOWNLOAD_DIR / "Systems"
+
+        # When skip_mp4=True, verify it skips immediately without network requests
+        downloaded, status = download_and_process_file(
+            page=mock_page,
+            base_url="https://example.com",
+            course_id="test_c1",
+            course_folder=course_folder,
+            item=item,
+            existing_index={"by_name": {}, "by_size": {}, "by_hash": {}},
+            skip_mp4=True
+        )
+        self.assertFalse(downloaded)
+        self.assertEqual(status, "skipped_mp4")
+        self.assertFalse(mock_page.called)
+
+    def test_13_app_settings_api(self):
+        from app import config
+        client = TestClient(app)
+
+        # GET settings
+        res_get = client.get("/api/settings")
+        self.assertEqual(res_get.status_code, 200)
+        initial = res_get.json()
+        self.assertIn("download_dir", initial)
+        self.assertIn("skip_mp4_downloads", initial)
+
+        # POST updated settings
+        custom_dl = TEST_DOWNLOAD_DIR / "custom_folder"
+        res_post = client.post("/api/settings", json={
+            "download_dir": str(custom_dl),
+            "skip_mp4_downloads": False,
+            "term_filter": "202627",
+            "blackboard_url": "https://tcd.blackboard.com/",
+            "auto_sync_enabled": True,
+            "interval_hours": 4.0,
+        })
+        self.assertEqual(res_post.status_code, 200)
+        updated = res_post.json()
+        self.assertEqual(updated["download_dir"], str(custom_dl.resolve()))
+        self.assertFalse(updated["skip_mp4_downloads"])
+        self.assertEqual(updated["term_filter"], "202627")
+        self.assertEqual(updated["blackboard_url"], "https://tcd.blackboard.com")
+        self.assertTrue(custom_dl.exists())
+
+        # Restore TEST_DOWNLOAD_DIR for subsequent tests
+        config.update_runtime_settings(download_dir=str(TEST_DOWNLOAD_DIR), skip_mp4_downloads=True, term_filter="")
+
+    def test_14_windows_browser_channels_and_icon(self):
+        from app import auth, config
+        import build_windows
+
+        # Test Windows channel ordering
+        orig_win = config.IS_WINDOWS
+        orig_ch = config.BROWSER_CHANNEL
+        try:
+            config.IS_WINDOWS = True
+            config.BROWSER_CHANNEL = "auto"
+            candidates = auth.get_browser_channel_candidates()
+            self.assertEqual(candidates[0], "msedge")
+            self.assertIn("chrome", candidates)
+        finally:
+            config.IS_WINDOWS = orig_win
+            config.BROWSER_CHANNEL = orig_ch
+
+        # Test ICO generator
+        ico_file = TEST_DATA_DIR / "test_icon.ico"
+        build_windows.generate_app_icon(ico_file)
+        self.assertTrue(ico_file.exists())
+        self.assertGreater(ico_file.stat().st_size, 1000)
 
 if __name__ == "__main__":
     unittest.main()

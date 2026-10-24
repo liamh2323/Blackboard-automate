@@ -5,7 +5,22 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 
 from . import database as db
+from . import config
 from .converter import convert_file_record
+
+def is_mp4_file(filename: str, mime_type: Optional[str] = None, url: Optional[str] = None) -> bool:
+    """Checks whether a file represents an MP4 video based on its extension, MIME type, or URL."""
+    if filename:
+        ext = Path(filename).suffix.lower()
+        if ext in (".mp4", ".m4v"):
+            return True
+    if mime_type and any(m in mime_type.lower() for m in ["video/mp4", "video/x-m4v"]):
+        return True
+    if url:
+        url_path = url.split("?")[0].lower()
+        if url_path.endswith(".mp4") or url_path.endswith(".m4v"):
+            return True
+    return False
 
 def sanitize_name(name: str) -> str:
     """Removes invalid filesystem characters and trims whitespace."""
@@ -86,7 +101,7 @@ def choose_destination_folder(course_folder: Path, remote_path: str, filename: s
 
 def download_and_process_file(page, base_url: str, course_id: str, course_folder: Path,
                              item: Dict[str, Any], existing_index: Dict[str, Dict],
-                             logger=print) -> Tuple[bool, str]:
+                             logger=print, skip_mp4: Optional[bool] = None) -> Tuple[bool, str]:
     """
     Downloads a single file from Blackboard, applies deduplication, registers in DB,
     and runs PDF to Markdown conversion.
@@ -96,12 +111,20 @@ def download_and_process_file(page, base_url: str, course_id: str, course_folder
     furl = item.get("permanentUrl")
     fsize = item.get("fileSize")
     rpath = item.get("path", "")
+    mime_type = item.get("mimeType")
     item_id = item.get("id") or hashlib.md5(f"{course_id}_{fname}_{furl}".encode()).hexdigest()
 
     if not fname or not furl:
         return False, "skipped_missing_info"
 
     clean_fname = sanitize_name(fname)
+
+    # Check if MP4 video download should be skipped
+    should_skip = config.SKIP_MP4_DOWNLOADS if skip_mp4 is None else skip_mp4
+    if should_skip and is_mp4_file(clean_fname, mime_type, furl):
+        logger(f"  ⏭️ Skipped MP4 video: {clean_fname}")
+        return False, "skipped_mp4"
+
     dest_dir = choose_destination_folder(course_folder, rpath, clean_fname)
     dest_file = dest_dir / clean_fname
 

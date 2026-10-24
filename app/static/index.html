@@ -152,21 +152,25 @@
     </section>
   </main>
 
-  <!-- Auto-Sync Configuration Modal -->
+  <!-- Application & Sync Settings Modal -->
   <div class="modal-overlay" id="modal-autosync">
-    <div class="modal-content modal-sm">
+    <div class="modal-content">
       <div class="modal-header">
-        <h3>Automatic sync settings</h3>
+        <h3>Application &amp; sync settings</h3>
         <button class="modal-close" onclick="closeModal('modal-autosync')" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <p class="modal-text">
-          When enabled, Blackboard Automate periodically checks for new lecture slides, lab assignments and deadline updates.
-        </p>
+        <label class="field-label" for="setting-download-dir">Download folder</label>
+        <div class="input-row">
+          <input type="text" id="setting-download-dir" class="input-text input-full" placeholder="Select folder for downloaded course files…">
+          <button type="button" class="btn btn-outline" id="btn-browse-folder" title="Choose folder on your computer">Browse…</button>
+          <button type="button" class="btn btn-outline" id="btn-open-download-folder" title="Open folder in File Explorer">Open</button>
+        </div>
+
         <div class="setting-row">
           <div>
             <div class="setting-title">Background auto-sync</div>
-            <div class="setting-desc">Runs while the dashboard server is running</div>
+            <div class="setting-desc">Periodically check for new slides, labs and deadlines</div>
           </div>
           <label class="switch">
             <input type="checkbox" id="autosync-toggle" checked>
@@ -174,19 +178,49 @@
           </label>
         </div>
 
-        <label class="field-label" for="autosync-interval-select">Sync frequency</label>
-        <select id="autosync-interval-select" class="input-text input-full">
-          <option value="1">Every hour</option>
-          <option value="2">Every 2 hours</option>
-          <option value="4" selected>Every 4 hours (recommended)</option>
-          <option value="8">Every 8 hours</option>
-          <option value="12">Every 12 hours</option>
-          <option value="24">Every 24 hours</option>
-        </select>
+        <div class="setting-row">
+          <div>
+            <div class="setting-title">Skip lecture recording videos (.mp4)</div>
+            <div class="setting-desc">Faster syncs by skipping large video files</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="setting-skip-mp4" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="settings-grid-two">
+          <div>
+            <label class="field-label" for="autosync-interval-select">Sync frequency</label>
+            <select id="autosync-interval-select" class="input-text input-full">
+              <option value="1">Every hour</option>
+              <option value="2">Every 2 hours</option>
+              <option value="4" selected>Every 4 hours (recommended)</option>
+              <option value="8">Every 8 hours</option>
+              <option value="12">Every 12 hours</option>
+              <option value="24">Every 24 hours</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label" for="setting-term-filter">Term filter (optional)</label>
+            <input type="text" id="setting-term-filter" class="input-text input-full" placeholder="e.g. 202627 (blank for all)">
+          </div>
+        </div>
+
+        <label class="field-label" for="setting-blackboard-url">University Blackboard URL</label>
+        <input type="url" id="setting-blackboard-url" class="input-text input-full" placeholder="https://tcd.blackboard.com">
+
+        <div class="setting-row" style="margin-top: 1rem; margin-bottom: 0;">
+          <div>
+            <div class="setting-title">Desktop shortcut</div>
+            <div class="setting-desc" id="shortcut-status-desc">Add a quick-launch icon to your Desktop</div>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btn-create-shortcut">Create shortcut</button>
+        </div>
 
         <div class="modal-actions">
           <button class="btn btn-outline" onclick="closeModal('modal-autosync')">Cancel</button>
-          <button class="btn btn-primary" id="btn-save-autosync">Save</button>
+          <button class="btn btn-primary" id="btn-save-autosync">Save settings</button>
         </div>
       </div>
     </div>

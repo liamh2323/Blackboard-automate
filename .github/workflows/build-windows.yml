@@ -1,0 +1,64 @@
+name: Build Windows Desktop App (.exe)
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Standalone Windows .exe
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies & PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pywebview
+
+      - name: Run unit tests
+        run: |
+          python -m unittest tests/test_app.py
+
+      - name: Build BlackboardAutomate.exe with PyInstaller
+        run: |
+          python build_windows.py
+
+      - name: Create distributable ZIP archive for friends
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\BlackboardAutomate.exe", "dist\README - How to Use.txt" -DestinationPath "dist\BlackboardAutomate-Windows.zip" -Force
+
+      - name: Upload Windows .exe & .zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackboardAutomate-Windows
+          path: |
+            dist/BlackboardAutomate.exe
+            dist/BlackboardAutomate-Windows.zip
+            dist/README - How to Use.txt
+          if-no-files-found: error
+
+      - name: Publish to GitHub Releases (on version tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/BlackboardAutomate-Windows.zip
+            dist/BlackboardAutomate.exe
+          generate_release_notes: true

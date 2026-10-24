@@ -18,7 +18,26 @@ An automated sync engine, document converter, and academic to-do dashboard for *
 
 ---
 
-## 🚀 Quick Start
+## 🪟 Windows Desktop App (Zero Setup for Friends)
+
+Blackboard Automate includes a standalone Windows desktop build (`BlackboardAutomate.exe`) that requires **no Python installation and no extra browser downloads** (it uses Windows' built-in Microsoft Edge or Google Chrome automatically):
+
+- **Native-looking desktop window**: Opens as a standalone desktop window (`pywebview` / Edge App Mode) and shuts down cleanly when closed.
+- **Automatic Desktop Shortcut**: Creates a **Blackboard Automate** shortcut on the user's Desktop on first run.
+- **In-App Settings & Folder Picker**: Friends can click **Settings** inside the app to browse and pick their Downloads folder, open folders in Windows File Explorer, or toggle MP4 video downloads—no `.env` editing required.
+
+### How to Build / Download the `.exe` for Friends
+
+1. **Via GitHub Actions (from Linux/macOS/Windows)**:
+   - Push to GitHub and open the **Actions** tab $\rightarrow$ **Build Windows Desktop App (.exe)**.
+   - Download the **`BlackboardAutomate-Windows`** artifact (or push a version tag like `git tag v1.0.0 && git push --tags` to publish `BlackboardAutomate-Windows.zip` directly to **GitHub Releases**).
+2. **Locally on a Windows PC**:
+   - Double-click `build-windows.bat` (or run `python build_windows.py`) to generate `dist\BlackboardAutomate.exe`.
+   - Or double-click `Start-Windows.bat` to run directly from source on Windows.
+
+---
+
+## 🚀 Quick Start (Linux / macOS / Developer Setup)
 
 ### 1. Installation
 

@@ -1,30 +1,96 @@
 import time
+import threading
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional, List, Dict, Any
 
 from playwright.sync_api import sync_playwright
 
-from .config import BASE_URL, PROFILE_PATH, SAML_PATH
+from . import config
+
+_login_lock = threading.Lock()
+
+
+def get_browser_channel_candidates() -> List[Optional[str]]:
+    """
+    Returns ordered list of Playwright browser channels to try.
+    On Windows, prioritizes built-in Microsoft Edge ('msedge') and Google Chrome ('chrome')
+    so users do not need to download a separate 300MB Playwright Chromium binary.
+    """
+    pref = (config.BROWSER_CHANNEL or "auto").lower()
+    if pref == "msedge":
+        return ["msedge", "chrome", None]
+    if pref == "chrome":
+        return ["chrome", "msedge", None]
+    if pref == "chromium":
+        return [None, "msedge", "chrome"]
+
+    # 'auto' mode
+    if config.IS_WINDOWS:
+        return ["msedge", "chrome", None]
+    return [None, "chrome", "msedge"]
+
+
+def launch_browser_context(
+    playwright_instance,
+    headless: bool = True,
+    viewport: Optional[Dict[str, int]] = None,
+    extra_args: Optional[List[str]] = None,
+    logger=None,
+):
+    """
+    Launches a persistent Chromium-based browser context using the first available channel
+    (Microsoft Edge, Google Chrome, or bundled Playwright Chromium).
+    """
+    profile_dir = Path(config.PROFILE_PATH)
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
+    candidates = get_browser_channel_candidates()
+    last_error = None
+
+    kwargs: Dict[str, Any] = {
+        "user_data_dir": str(profile_dir),
+        "headless": headless,
+    }
+    if viewport:
+        kwargs["viewport"] = viewport
+    if extra_args:
+        kwargs["args"] = extra_args
+
+    for channel in candidates:
+        try:
+            call_kwargs = dict(kwargs)
+            if channel is not None:
+                call_kwargs["channel"] = channel
+            ctx = playwright_instance.chromium.launch_persistent_context(**call_kwargs)
+            return ctx
+        except Exception as e:
+            last_error = e
+            continue
+
+    # If all candidates failed, raise the last error with a helpful message
+    raise RuntimeError(
+        f"Could not launch Microsoft Edge, Google Chrome, or Chromium ({last_error}). "
+        "Please ensure Microsoft Edge or Google Chrome is installed."
+    )
+
 
 def is_session_valid(page) -> bool:
     """Verifies whether the current Playwright page session is authenticated with Blackboard."""
     try:
-        res = page.request.get(f"{BASE_URL}/learn/api/v1/users/me")
+        res = page.request.get(f"{config.BASE_URL}/learn/api/v1/users/me")
         return res.status == 200
     except Exception:
         return False
 
+
 def check_login_status() -> Tuple[bool, str]:
     """Headless check of persistent browser session validity."""
-    if not Path(PROFILE_PATH).exists():
+    if not Path(config.PROFILE_PATH).exists():
         return False, "No saved session profile found. Please log in."
 
     try:
         with sync_playwright() as p:
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=PROFILE_PATH,
-                headless=True
-            )
+            ctx = launch_browser_context(p, headless=True)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             valid = is_session_valid(page)
             ctx.close()
@@ -34,33 +100,34 @@ def check_login_status() -> Tuple[bool, str]:
     except Exception as e:
         return False, f"Auth check failed: {e}"
 
-import threading
-
-_login_lock = threading.Lock()
 
 def is_login_active() -> bool:
     return _login_lock.locked()
 
+
 def launch_interactive_login(timeout_seconds: int = 300, logger=print) -> bool:
     """
-    Opens an interactive Chromium window for the user to enter university SSO credentials
-    and complete 2FA on their phone.
+    Opens an interactive browser window (Edge/Chrome/Chromium) for the user to enter
+    university SSO credentials and complete 2FA on their phone.
     """
     if not _login_lock.acquire(blocking=False):
         logger("⚠️ Login window is already open or in progress.")
         return False
 
     try:
-        logger(f"Launching interactive browser login window for {BASE_URL}...")
+        config.load_persisted_settings()
+        base_url = config.BASE_URL
+        logger(f"Launching interactive browser login window for {base_url}...")
         logger("Please log in using your university credentials and complete 2-Factor Authentication.")
 
         with sync_playwright() as p:
             try:
-                ctx = p.chromium.launch_persistent_context(
-                    user_data_dir=PROFILE_PATH,
+                ctx = launch_browser_context(
+                    p,
                     headless=False,
                     viewport={"width": 1280, "height": 850},
-                    args=["--disable-blink-features=AutomationControlled"]
+                    extra_args=["--disable-blink-features=AutomationControlled"],
+                    logger=logger,
                 )
             except Exception as e:
                 logger(f"❌ Could not launch browser profile (it may already be in use): {e}")
@@ -68,7 +135,7 @@ def launch_interactive_login(timeout_seconds: int = 300, logger=print) -> bool:
 
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
-                page.goto(f"{BASE_URL}/ultra/course")
+                page.goto(f"{base_url}/ultra/course")
             except Exception:
                 pass
 
@@ -104,3 +171,4 @@ def launch_interactive_login(timeout_seconds: int = 300, logger=print) -> bool:
                 return False
     finally:
         _login_lock.release()
+
